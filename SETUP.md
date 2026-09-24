@@ -150,10 +150,15 @@ means and what to type:
 2. **`Your email address (used for git commit authorship)`**
    Type the email you want associated with your commits.
 
-   > Note: as of this version of the repo, nothing automatically writes
-   > these two answers into a git config file. They're captured for
-   > future use by this repo's templates. If you want git itself to use
-   > your name and email right now, also run:
+   > Note: these two answers do get written to your global git config
+   > automatically during `chezmoi apply`, but only for whichever of
+   > name and email you don't already have set. On a work laptop, IT's
+   > onboarding may have already configured a git identity, and this
+   > deliberately won't overwrite it. Once setup finishes, check what
+   > you actually ended up with:
+   > `git config --global user.name` and
+   > `git config --global user.email`. If either isn't what you want,
+   > set it yourself:
    > `git config --global user.name "Your Name"` and
    > `git config --global user.email "you@example.com"`.
 
