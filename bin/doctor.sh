@@ -300,7 +300,15 @@ fi
 # =============================================================================
 section "Required CLIs"
 # =============================================================================
-for cli in bat fzf gh jq rg nvim mise op linear claude; do
+# Source of truth: the Brewfile (core tier). This list is every `brew`
+# formula there that installs a standalone binary on PATH (bat, fzf, gh,
+# jq, ripgrep -> rg, mise), plus the two casks that install a CLI rather
+# than a GUI app (1password-cli -> op, claude-code -> claude). chezmoi is
+# checked separately above. zsh-autosuggestions and zsh-syntax-highlighting
+# are also in the Brewfile but are zsh plugins sourced by the shell, not
+# binaries on PATH, so they don't belong here. If the Brewfile changes,
+# update this list to match.
+for cli in bat fzf gh jq rg mise op claude; do
   if command -v "$cli" >/dev/null 2>&1; then
     pass "'${cli}' is installed."
   else
