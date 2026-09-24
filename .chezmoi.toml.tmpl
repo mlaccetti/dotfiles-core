@@ -1,0 +1,62 @@
+{{/*
+  This file is rendered ONCE, at `chezmoi init` time, to produce
+  ~/.config/chezmoi/chezmoi.toml. It asks a handful of plain-English
+  questions and stores the answers as template data (the ".xxx" values
+  used throughout the rest of this repo, e.g. in dot_zshrc.tmpl).
+
+  It is safe to re-run: `chezmoi init` again (or `chezmoi init --data`)
+  will re-prompt and overwrite chezmoi.toml, not any of your dotfiles.
+
+  Note on style: the full question text below is the FIRST argument to
+  each prompt* call, because that's the literal text chezmoi prints to
+  the terminal - a non-expert should be able to answer correctly from
+  that text alone, without reading this file. (chezmoi's prompt functions
+  treat a second string argument as a pre-filled default value, not as
+  help text, so explanations belong in the question itself or in a
+  comment like this one - not tacked on as a second argument.)
+*/}}
+{{- $name := promptString "Your full name (used for git commit authorship)" -}}
+{{- $email := promptString "Your email address (used for git commit authorship)" -}}
+{{- /* profile constrains all conditional content in this repo to one of two known values. */ -}}
+{{- $profile := promptString "Which profile is this? Type 'michael' for Michael's machine or 'shared' for anyone else (e.g. a spouse's laptop)" -}}
+{{- if and (ne $profile "michael") (ne $profile "shared") -}}
+  {{- fail (printf "profile must be 'michael' or 'shared', got %q - run 'chezmoi init' again" $profile) -}}
+{{- end -}}
+{{- /* Controls whether the [onepassword] section below is written at all. */ -}}
+{{- $use1password := promptBool "Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)" -}}
+[data]
+    name = {{ $name | quote }}
+    email = {{ $email | quote }}
+    profile = {{ $profile | quote }}
+    use1password = {{ $use1password }}
+
+{{ if $use1password -}}
+# --- 1Password integration -------------------------------------------------
+#
+# chezmoi can call out to the `op` CLI to pull secrets into your config at
+# `chezmoi apply` time (this repo's core templates do not do that by
+# default - this just makes it possible for your own ~/.zshrc.local or
+# private overlays to use `onepasswordRead` if you add it).
+#
+# 1Password's CLI authenticates two different ways, and chezmoi needs to be
+# told which one you're using or `chezmoi apply` will error out:
+#
+#   - "account"         - the normal way: you're signed into the 1Password
+#                          app / CLI with your own account (including work
+#                          SSO). This is almost always what you want.
+#   - "service-account"  - a headless, non-interactive token, set via the
+#                          OP_SERVICE_ACCOUNT_TOKEN environment variable.
+#                          chezmoi REFUSES to use "account" mode whenever
+#                          that variable is set (it assumes you meant to
+#                          use the service account), so we detect it here
+#                          and switch modes automatically. You don't need
+#                          to do anything - if you ever set up a service
+#                          account token later, this will pick it up on
+#                          the next `chezmoi init`.
+[onepassword]
+    {{- if env "OP_SERVICE_ACCOUNT_TOKEN" }}
+    mode = "service-account"
+    {{- else }}
+    mode = "account"
+    {{- end }}
+{{- end }}

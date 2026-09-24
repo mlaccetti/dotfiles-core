@@ -1,0 +1,39 @@
+{
+  "name": "Anthropic",
+  "base": "dark",
+  "overrides": {
+    "claude": "#D97757",
+
+    "text": "ansi:whiteBright",
+    "inactive": "ansi:white",
+    "subtle": "ansi:blackBright",
+    "inverseText": "ansi:black",
+
+    "success": "ansi:green",
+    "error": "ansi:red",
+    "warning": "ansi:yellow",
+    "merged": "ansi:green",
+
+    "promptBorder": "ansi:blue",
+    "planMode": "ansi:cyan",
+    "autoAccept": "ansi:greenBright",
+    "bashBorder": "ansi:yellow",
+    "permission": "ansi:magenta",
+
+    "diffAdded": "ansi:green",
+    "diffRemoved": "ansi:red",
+    "diffAddedWord": "ansi:greenBright",
+    "diffRemovedWord": "ansi:redBright",
+
+    "userMessageBackground": "ansi:black",
+
+    "red_FOR_SUBAGENTS_ONLY": "ansi:red",
+    "blue_FOR_SUBAGENTS_ONLY": "ansi:blue",
+    "green_FOR_SUBAGENTS_ONLY": "ansi:green",
+    "yellow_FOR_SUBAGENTS_ONLY": "ansi:yellow",
+    "cyan_FOR_SUBAGENTS_ONLY": "ansi:cyan",
+    "purple_FOR_SUBAGENTS_ONLY": "ansi:magenta",
+    "orange_FOR_SUBAGENTS_ONLY": "ansi:redBright",
+    "pink_FOR_SUBAGENTS_ONLY": "ansi:magentaBright"
+  }
+}

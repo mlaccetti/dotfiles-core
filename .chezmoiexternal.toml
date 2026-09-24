@@ -1,0 +1,28 @@
+# Automated upstream-sync mechanism.
+#
+# These three entries tell chezmoi to manage oh-my-zsh itself, plus the two
+# custom plugins this repo's dot_zshrc.tmpl loads, as plain git clones of
+# their VANILLA upstream repositories - not forks, not anything vendored
+# into this repo. chezmoi re-checks each one every `refreshPeriod` (here,
+# once a week) and fast-forwards it, so you always have the real upstream
+# code with no manual "git pull" step and no drift.
+#
+# This is also the anti-fork-drift guard's counterpart: see
+# run_once_before_01-replace-oh-my-zsh-fork.sh, which detects and offers
+# to back up a ~/.oh-my-zsh that has been replaced by something other than
+# ohmyzsh/ohmyzsh, so this external can re-clone the real thing.
+
+[".oh-my-zsh"]
+    type = "git-repo"
+    url = "https://github.com/ohmyzsh/ohmyzsh.git"
+    refreshPeriod = "168h"
+
+[".oh-my-zsh-custom/plugins/zsh-autosuggestions"]
+    type = "git-repo"
+    url = "https://github.com/zsh-users/zsh-autosuggestions.git"
+    refreshPeriod = "168h"
+
+[".oh-my-zsh-custom/plugins/zsh-syntax-highlighting"]
+    type = "git-repo"
+    url = "https://github.com/zsh-users/zsh-syntax-highlighting.git"
+    refreshPeriod = "168h"

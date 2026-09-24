@@ -1,0 +1,10 @@
+# These files live in the chezmoi source repo but are NOT dotfiles to be
+# placed into $HOME. They're either documentation, or source material
+# that the run_once_ scripts read directly via $CHEZMOI_SOURCE_DIR (see
+# run_once_before_02-brew-bundle-core.sh, run_once_after_10-install-iterm2-profile.sh,
+# and run_once_after_90-seed-zshrc-local.sh).
+README.md
+Brewfile
+bin/
+iterm2/
+dot_zshrc_local.example

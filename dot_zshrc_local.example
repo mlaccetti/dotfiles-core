@@ -1,0 +1,49 @@
+# ~/.zshrc.local - your machine, your rules
+# =============================================================================
+#
+# This file is YOURS. It is not managed by chezmoi, it is not part of the
+# dotfiles-core repo, and `chezmoi apply` will never read, overwrite, or
+# even look at it. Your ~/.zshrc (the one chezmoi manages) sources this
+# file automatically near the top, so anything you put here takes effect
+# in every new terminal.
+#
+# Use it for:
+#   - work-specific tooling (VPNs, internal CLIs, company URLs)
+#   - secrets or tokens (never put these in the shared, public repo!)
+#   - personal aliases and shortcuts you don't want to share
+#   - anything you're just trying out and don't want to commit to yet
+#
+# This file was copied here once, automatically, the first time chezmoi
+# ran on this machine (see the run_once_after_90-seed-zshrc-local.sh
+# script in dotfiles-core). It will NOT be touched again after that - edit
+# it freely, nothing will overwrite it.
+#
+# Below are a few worked examples to get you started. They're all
+# commented out - uncomment and edit the ones you want, or just delete
+# them and write your own.
+
+# -----------------------------------------------------------------------
+# Example 1: a simple alias
+# -----------------------------------------------------------------------
+# alias gs="git status"
+
+# -----------------------------------------------------------------------
+# Example 2: an environment variable / export
+# -----------------------------------------------------------------------
+# export MY_COMPANY_API_URL="https://api.example-work.com"
+
+# -----------------------------------------------------------------------
+# Example 3: a function (put anything more than one line here)
+# -----------------------------------------------------------------------
+# greet() {
+#   echo "Hello, $1! It's $(date +'%A %H:%M')."
+# }
+
+# -----------------------------------------------------------------------
+# Example 4: something that only exists on THIS machine
+# -----------------------------------------------------------------------
+# Guard machine-specific things with an existence check, so this file
+# stays portable if you ever copy pieces of it to another Mac.
+# if [[ -f "/Applications/SomeWorkTool.app/Contents/Resources/cli.sh" ]]; then
+#   source "/Applications/SomeWorkTool.app/Contents/Resources/cli.sh"
+# fi
