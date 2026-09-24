@@ -10,9 +10,6 @@
 # Check what's missing without installing anything:
 #   brew bundle check --file=~/.local/share/chezmoi/Brewfile --no-upgrade
 #
-# Lines tagged `# TODO(michael): core or michael-only?` were ambiguous calls
-# made during the initial split - triage and move as needed.
-#
 # ---- A note for a WORK / MDM-managed laptop ----
 #
 # Every line below flagged "MDM" is a place where a corporate-managed Mac
@@ -63,17 +60,8 @@ brew "sevenzip"
 brew "mmv"
 brew "imagemagick"
 
-# ---- Ambiguous - triage ----
-# CI linter for GitHub Actions workflows; not everyone touches CI configs.
-brew "actionlint" # TODO(michael): core or michael-only?
-# Parallel command runner for local dev servers.
-brew "mprocs" # TODO(michael): core or michael-only?
-# JS/Node package manager; only needed if doing JS/web dev.
-brew "pnpm" # TODO(michael): core or michael-only?
-# Python static type checker; only needed if doing Python dev.
-brew "pyright" # TODO(michael): core or michael-only?
-# Fast Python package installer/resolver; only needed if doing Python dev.
-brew "uv" # TODO(michael): core or michael-only?
+# actionlint, mprocs, pnpm, pyright, and uv moved out of Homebrew and now
+# live in mise's global config (~/.config/mise/config.toml) instead.
 
 # ---- Editor ----
 brew "neovim"
@@ -101,12 +89,12 @@ cask "visual-studio-code"
 # usually harmless but redundant - check first.
 cask "slack"
 
-# ---- Ambiguous GUI - triage ----
 # GPG toolchain, e.g. for signed git commits; not everyone signs commits.
+# GUI app plus a system extension, no mise backend exists, so it stays here.
 # MDM: GPG Suite can install a system extension / require Keychain access
 # that managed-Mac security policy blocks outright. Expect this one to
 # need IT approval, or to fail cleanly under MDM.
-cask "gpg-suite-no-mail" # TODO(michael): core or michael-only?
+cask "gpg-suite-no-mail"
 
 # ---- Fonts ----
 # MDM: font casks are generally low-risk and rarely blocked, but font
