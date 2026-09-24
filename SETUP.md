@@ -1,11 +1,5 @@
 # Setup
 
-> **Before you send this to anyone:** the repo URL used throughout this
-> document is a placeholder: `https://github.com/mlaccetti/dotfiles-core`.
-> That repository does not exist yet. Confirm the real URL and swap it in
-> everywhere below before handing this document to another person or
-> running it unattended.
-
 ## What you're getting
 
 This sets up a themed terminal (iTerm2, in a dark palette that matches
