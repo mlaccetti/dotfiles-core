@@ -394,6 +394,14 @@ normally, in a browser window. Claude never sees your password.
 
 ### Step 9: Connect Claude Code to Linear
 
+This is the first time this guide actually runs `claude`. The first
+time you do, macOS may show a dialog saying it can't verify the app.
+That's expected for software installed outside the App Store, it
+doesn't mean anything is wrong. Click **Open** or **Open Anyway**. If
+the dialog doesn't offer that button, open **System Settings > Privacy
+& Security**, scroll down, and click **Open Anyway** next to the
+message about `claude`. You only need to do this once per version.
+
 ```bash
 claude mcp add --transport http linear-server https://mcp.linear.app/mcp
 ```
@@ -496,6 +504,7 @@ create) a Netlify account, then the terminal confirms you're logged in.
 | `chezmoi apply` fails with a 1Password-related error | You answered `true` to the 1Password question, and something (a private overlay, or a future version of this repo) is calling `onepasswordRead` while the `op` CLI isn't signed in | Run `op signin` and re-run `chezmoi apply`, or run `chezmoi init` again and answer `false` if you don't need 1Password integration. As shipped today, nothing in this repo actually calls `onepasswordRead`, so this shouldn't come up unless you've added something yourself. |
 | Your shell doesn't look like zsh, or `~/.zshrc` doesn't seem to apply | Your default shell isn't zsh (some managed Macs override this) | Check with `echo $SHELL` (expect `/bin/zsh`). If it's something else, run `chsh -s /bin/zsh` and open a new terminal. If that command is blocked by MDM, ask IT to set your default shell. |
 | A command like `bat`, `fzf`, or `chezmoi` says "command not found" right after install | You're still in the old shell from before Homebrew/chezmoi was on `PATH` | Open a brand-new terminal window (not just a new tab in some setups), or run `exec zsh -l`. |
+| `claude` produces no output and never finishes (looks frozen) | macOS Gatekeeper is waiting on a security confirmation, possibly behind another window | Look for the dialog (check other windows and **System Settings > Privacy & Security**), approve it, then try again. Pressing Ctrl+C to cancel is safe. |
 | A browser sign-in window never opens, or opens and then errors | Corporate SSO or security software is blocking it | This is the item 3 "ask first" issue; confirm with IT that browser-based sign-in is allowed for the specific tool. |
 | Not sure what belongs in `~/.zshrc.local` | It's easy to confuse with the managed `~/.zshrc` | See "Making it yours" below. |
 
