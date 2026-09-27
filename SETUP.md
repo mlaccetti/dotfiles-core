@@ -400,7 +400,7 @@ That's expected for software installed outside the App Store, it
 doesn't mean anything is wrong. Click **Open** or **Open Anyway**. If
 the dialog doesn't offer that button, open **System Settings > Privacy
 & Security**, scroll down, and click **Open Anyway** next to the
-message about `claude`. You only need to do this once per version.
+message about `claude`. This is a one time thing on this computer; future Claude Code updates will not ask again.
 
 ```bash
 claude mcp add --transport http linear-server https://mcp.linear.app/mcp
