@@ -94,6 +94,12 @@ back to asking the human to run `chezmoi init` themselves interactively.
   glyphs render correctly rather than as tofu boxes.
 - **Steps 9 through 12**, entirely: every one of them is a browser OAuth
   login the agent cannot complete on the human's behalf.
+- **Step 9**, additionally: the first `claude` invocation on a machine
+  may block on a GUI Gatekeeper security prompt the agent cannot click
+  through. The symptom is an indefinite hang with no output, not an
+  error, and it recurs on every `claude-code` version upgrade since each
+  new binary needs its own approval. Recognize this and stop to ask a
+  human rather than retrying or waiting it out.
 - **Step 10**, additionally: confirm the human's Atlassian admin has
   enabled Rovo/MCP before attempting the connection; don't assume it.
 - Any Homebrew package in Step 4 that fails because it needs IT/MDM
