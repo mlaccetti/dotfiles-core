@@ -25,6 +25,18 @@ if ! command -v git >/dev/null 2>&1; then
   exit 0
 fi
 
+# jq comes from Homebrew. On a fresh Apple Silicon Mac brew is not on this
+# process's PATH yet (run_once_before_00 only loaded it in its own process), so
+# load it from the standard locations before deciding jq is missing.
+if ! command -v jq >/dev/null 2>&1; then
+  for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    if [ -x "$candidate" ]; then
+      eval "$("$candidate" shellenv)"
+      break
+    fi
+  done
+fi
+
 if ! command -v jq >/dev/null 2>&1; then
   echo "    !! jq is not installed - can't safely read the name/email chezmoi"
   echo "    !! collected at init time."

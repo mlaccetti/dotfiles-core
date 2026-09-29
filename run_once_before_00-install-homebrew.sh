@@ -13,6 +13,16 @@ if command -v brew >/dev/null 2>&1; then
   exit 0
 fi
 
+# Homebrew can be installed but not on this process's PATH (Apple Silicon's
+# /opt/homebrew/bin is not on the default PATH, for example). Check the
+# standard locations before deciding it is missing and running the installer.
+for candidate in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+  if [ -x "$candidate" ]; then
+    echo "    Homebrew is already installed at ${candidate} (not on PATH yet). Skipping install."
+    exit 0
+  fi
+done
+
 echo "    Homebrew not found. Attempting to install..."
 
 if [ "$(uname -m)" = "arm64" ]; then
