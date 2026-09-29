@@ -36,7 +36,13 @@ FAILURES=0
 WARNINGS=0
 
 pass() { printf "  %s[PASS]%s %s\n" "$C_GREEN" "$C_RESET" "$1"; }
-warn() { printf "  %s[WARN]%s %s\n" "$C_YELLOW" "$C_RESET" "$1"; WARNINGS=$((WARNINGS + 1)); }
+warn() {
+  printf "  %s[WARN]%s %s\n" "$C_YELLOW" "$C_RESET" "$1"
+  if [ -n "${2:-}" ]; then
+    printf "         %sNote:%s %s\n" "$C_BOLD" "$C_RESET" "$2"
+  fi
+  WARNINGS=$((WARNINGS + 1))
+}
 fail() {
   printf "  %s[FAIL]%s %s\n" "$C_RED" "$C_RESET" "$1"
   if [ -n "${2:-}" ]; then
@@ -138,20 +144,189 @@ report_zsh_unavailable() {
 # =============================================================================
 section "Homebrew"
 # =============================================================================
+# Every formula/cask in the Brewfile is checked individually against what is
+# actually on this machine, instead of trusting the all-or-nothing answer of
+# `brew bundle check`. That matters on a company-managed Mac: IT often
+# installs 1Password, Slack, and similar apps itself, so brew did not install
+# them, but they are there and work fine. Those are a WARN ("present, just
+# not managed by Homebrew"), never a FAIL. Only something that is really
+# absent is a FAIL.
+
+# brewfile_list FILE KIND: print the names of KIND (formula|cask) entries in
+# FILE. Returns brew's exit status so a broken `brew bundle list` is never
+# mistaken for "nothing is missing".
+brewfile_list() {
+  brew bundle list --file="$1" "--$2" 2>/dev/null
+}
+
+# brewfile_missing FILE KIND: print the entries brew has not installed.
+brewfile_missing() {
+  local file="$1" kind="$2" name
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    if ! brew list "--${kind}" --versions "$name" >/dev/null 2>&1; then
+      printf '%s\n' "$name"
+    fi
+  done < <(brewfile_list "$file" "$kind")
+}
+
+# Where chezmoi externals put zsh plugins (zsh-autosuggestions and
+# zsh-syntax-highlighting): $ZSH_CUSTOM/plugins/<name>. $ZSH_CUSTOM is often
+# unset in a bare ssh session, so fall back to its fixed default location.
+ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-${HOME_DIR}/.oh-my-zsh-custom}"
+
+# cask_outside_brew CASK: decide whether a cask brew does NOT manage is
+# nonetheless present on this machine. On success prints ONE line,
+# "<kind><TAB><description>", where kind is app | font | bin, and returns 0;
+# returns 1 (prints nothing) if it is genuinely absent or cannot be
+# determined. The ground truth is brew's own cask metadata
+# (`brew info --cask --json=v2`), which lists exactly the artifacts the cask
+# would install, so the check follows whatever the cask really ships instead
+# of a hand-kept name table:
+#   - app artifacts: the named .app bundle exists in /Applications or
+#     ~/Applications (installed by IT, drag-installed, or by the vendor's
+#     updater).
+#   - font artifacts: EVERY listed font file exists in ~/Library/Fonts or
+#     /Library/Fonts. All-or-nothing on purpose: a partial family is not
+#     "present", and brew installs fonts as plain files in ~/Library/Fonts,
+#     so file presence is the same thing brew itself would have produced.
+#   - binary artifacts (only for casks with no app or font, e.g.
+#     1password-cli): EVERY binary the cask declares must resolve to an
+#     absolute path on PATH. One stray match is not enough, and the
+#     description lists each resolved path so it is clear where the tool
+#     really came from. The claude-code casks are deliberately excluded: a
+#     stray `claude` on PATH must never hide a missing (or wrong-channel)
+#     claude-code cask.
+# Casks with no detectable artifact return 1 and stay "missing". Needs jq;
+# without it nothing is softened.
+cask_outside_brew() {
+  local cask="$1" info app font bin dir found resolved desc
+  local -a apps=() fonts=() bins=()
+  command -v jq >/dev/null 2>&1 || return 1
+  info="$(brew info --cask --json=v2 "$cask" 2>/dev/null)" || return 1
+  while IFS= read -r app; do
+    [ -n "$app" ] && apps+=("$app")
+  done < <(printf '%s' "$info" | jq -r '.casks[0].artifacts[]? | select(type == "object") | .app[]? | select(type == "string")' 2>/dev/null)
+  while IFS= read -r font; do
+    [ -n "$font" ] && fonts+=("$font")
+  done < <(printf '%s' "$info" | jq -r '.casks[0].artifacts[]? | select(type == "object") | .font[]? | select(type == "string")' 2>/dev/null)
+  while IFS= read -r bin; do
+    [ -n "$bin" ] && bins+=("$bin")
+  done < <(printf '%s' "$info" | jq -r '.casks[0].artifacts[]? | select(type == "object") | .binary[]? | select(type == "string")' 2>/dev/null)
+
+  if [ ${#apps[@]} -gt 0 ]; then
+    app="${apps[0]}"
+    for dir in "/Applications" "${HOME_DIR}/Applications"; do
+      if [ -d "${dir}/${app}" ]; then
+        printf 'app\t%s/%s\n' "$dir" "$app"
+        return 0
+      fi
+    done
+    return 1
+  fi
+
+  if [ ${#fonts[@]} -gt 0 ]; then
+    for font in "${fonts[@]}"; do
+      found=0
+      for dir in "${HOME_DIR}/Library/Fonts" "/Library/Fonts"; do
+        if [ -e "${dir}/${font}" ]; then
+          found=1
+          break
+        fi
+      done
+      [ "$found" -eq 1 ] || return 1
+    done
+    printf 'font\t%s font file(s) in Library/Fonts\n' "${#fonts[@]}"
+    return 0
+  fi
+
+  case "$cask" in
+    claude-code | claude-code@*) return 1 ;;
+  esac
+  if [ ${#bins[@]} -gt 0 ]; then
+    desc=""
+    for bin in "${bins[@]}"; do
+      resolved="$(command -v "${bin##*/}" 2>/dev/null)"
+      # Only an on-disk path counts; an alias or function name does not.
+      case "$resolved" in
+        /*) ;;
+        *) return 1 ;;
+      esac
+      desc="${desc:+${desc}, }${bin##*/} at ${resolved}"
+    done
+    printf 'bin\t%s\n' "$desc"
+    return 0
+  fi
+  return 1
+}
+
+# check_brewfile FILE LABEL: per-item Brewfile check (see the section header).
+check_brewfile() {
+  local file="$1" label="$2" name where adopt found kind
+  local -a missing=() external=()
+
+  if [ ! -f "$file" ]; then
+    warn "Could not find ${label} at ${file} to check against."
+    return
+  fi
+  if ! brewfile_list "$file" formula >/dev/null || ! brewfile_list "$file" cask >/dev/null; then
+    warn "Could not read ${label} with 'brew bundle list', so its packages were not checked." \
+      "Try: brew bundle list --file=\"${file}\""
+    return
+  fi
+
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    # zsh plugins (zsh-autosuggestions, zsh-syntax-highlighting) are
+    # delivered by chezmoi externals into $ZSH_CUSTOM/plugins/, not by brew.
+    # If the plugin directory exists, the formula is satisfied.
+    if [ -d "${ZSH_CUSTOM_DIR}/plugins/${name}" ]; then
+      external+=("$name")
+      continue
+    fi
+    missing+=("$name")
+  done < <(brewfile_missing "$file" formula)
+
+  while IFS= read -r name; do
+    [ -z "$name" ] && continue
+    # Present on disk but not installed through brew (an app IT deployed, a
+    # drag-installed app, fonts copied by hand): a WARN, not a missing
+    # package.
+    if found="$(cask_outside_brew "$name")"; then
+      kind="${found%%$'\t'*}"
+      where="${found#*$'\t'}"
+      # Fonts are plain files with no app to quit; --force re-lays them under
+      # brew's control. Apps need to be closed before --adopt. Binary-only
+      # casks have nothing to quit or adopt: the tool came from somewhere
+      # else, so the choice is to remove that install and let brew own it,
+      # or drop the cask.
+      case "$kind" in
+        font) adopt="Adopt with: brew install --cask --force ${name}" ;;
+        bin) adopt="Installed outside Homebrew. To let Homebrew manage it, remove the other install and run: brew install --cask ${name}, or drop it from the Brewfile." ;;
+        *) adopt="Adopt with: brew install --cask --adopt ${name} (after quitting the app)" ;;
+      esac
+      warn "'${name}' is present but not brew-managed (${label}): ${where}." \
+        "It works as installed; nothing is wrong. ${adopt}"
+      continue
+    fi
+    missing+=("$name")
+  done < <(brewfile_missing "$file" cask)
+
+  if [ ${#external[@]} -gt 0 ]; then
+    pass "${label}: provided by chezmoi in ${ZSH_CUSTOM_DIR}/plugins, not brew: ${external[*]}."
+  fi
+
+  if [ ${#missing[@]} -eq 0 ]; then
+    pass "All ${label} packages are installed or otherwise present."
+  else
+    fail "${label} is missing: ${missing[*]}." \
+      "Run: brew bundle --file=\"${file}\""
+  fi
+}
+
 if command -v brew >/dev/null 2>&1; then
   pass "Homebrew is installed ($(command -v brew))."
-
-  BREWFILE="${SOURCE_DIR}/Brewfile"
-  if [ -f "$BREWFILE" ]; then
-    if brew bundle check --file="$BREWFILE" --no-upgrade >/dev/null 2>&1; then
-      pass "All core Brewfile packages are installed."
-    else
-      fail "Some core Brewfile packages are missing." \
-        "Run: brew bundle --file=\"$BREWFILE\""
-    fi
-  else
-    warn "Could not find Brewfile at ${BREWFILE} to check against."
-  fi
+  check_brewfile "${SOURCE_DIR}/Brewfile" "core Brewfile"
 else
   fail "Homebrew is not installed." \
     "Run: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
