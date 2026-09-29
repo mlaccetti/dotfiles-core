@@ -19,7 +19,7 @@ detail.**
 | 3. chezmoi | `brew install chezmoi` | `command -v chezmoi` | No. |
 | 4. `chezmoi init --apply` | See below. | `test -f "$HOME/.zshrc" && test -f "$HOME/.claude/themes/anthropic.json"` | **Requires human for the answers** (see below). Homebrew package failures inside this step are non-fatal by design; collect them and report to the human rather than retrying blindly. |
 | 5. Restart shell | `exec zsh -l` (or open a fresh shell for subsequent commands) | `[ "$ZSH_CUSTOM" = "$HOME/.oh-my-zsh-custom" ]` | No. |
-| 6. iTerm2 profile selection | None (GUI-only). | N/A | **Requires human.** No CLI can select an iTerm2 profile as active/default. |
+| 6. iTerm2 default profile | Nothing to run: step 4's `run_once_after_10-install-iterm2-profile.sh` sets it automatically. Check with `pgrep -x iTerm2` first. **Never quit or kill iTerm2.** If iTerm2 is not running, it is already done; to retry: `bash "$(chezmoi source-path)/run_once_after_10-install-iterm2-profile.sh"`. | `[ "$(defaults read com.googlecode.iterm2 "Default Bookmark Guid")" = "$(jq -r '.Profiles[0].Guid' "$(chezmoi source-path)/iterm2/Anthropic.json")" ]` | **No, if iTerm2 was not running** during step 4 (the default is set for you). **Requires human if iTerm2 was open**: the script skips the write because iTerm2 would overwrite it on quit, and the agent must not quit the app. The human then quits and reopens iTerm2 and you re-run the script, or they use iTerm2 > Settings > Profiles > Anthropic > Other Actions > Set as Default. |
 | 7. Claude theme | (already set in step 4) | `[ "$(jq -r '.theme' "$HOME/.claude/settings.json")" = "custom:anthropic" ]` | No. |
 | 8. doctor.sh | `bash "$(chezmoi source-path)/bin/doctor.sh"` | exit code `0` | The script itself is non-interactive, but its "Glyph rendering test" section requires a **human** to look at the output and judge it (see below). See the caveat below: this may legitimately exit non-zero on a fresh `shared`-profile machine. |
 | 9. Linear MCP | `claude mcp add --transport http linear-server https://mcp.linear.app/mcp` | `claude mcp list` shows `linear-server` connected | **Requires human** to complete the browser OAuth login. |
@@ -89,7 +89,9 @@ back to asking the human to run `chezmoi init` themselves interactively.
 - **Step 2**, if Homebrew needs a sudo password the agent doesn't have.
 - **Step 4**, for the name, email, and profile confirmation (never
   invent these).
-- **Step 6**, entirely (iTerm2 profile selection is GUI-only).
+- **Step 6**, only if iTerm2 was running during step 4 (the default profile
+  was not set automatically, and the agent must not quit iTerm2). If it was
+  closed, this step is already done.
 - **Step 8's glyph section**, for visual confirmation that the Nerd Font
   glyphs render correctly rather than as tofu boxes.
 - **Steps 9 through 12**, entirely: every one of them is a browser OAuth

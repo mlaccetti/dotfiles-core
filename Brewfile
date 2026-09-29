@@ -77,7 +77,9 @@ cask "1password-cli"
 # MDM: third-party AI coding tools are frequently subject to a company's
 # data-handling/security-review policy before they're allowed on a work
 # laptop. Confirm Claude Code is approved before installing.
-cask "claude-code"
+# The @latest channel cask conflicts with the stable `claude-code` cask (both
+# own the `claude` binary), so a machine runs exactly one of them.
+cask "claude-code@latest"
 # MDM: dev-tool installs sometimes need IT approval on a locked-down
 # fleet, and some companies mandate a specific hardened/managed build of
 # VS Code instead of the vanilla cask.

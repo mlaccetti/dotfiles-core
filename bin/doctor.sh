@@ -9,10 +9,20 @@
 # next step when something's wrong. No stack traces. Exits non-zero if any
 # check FAILs (WARN does not affect the exit code).
 #
-# shellcheck disable=SC2088
-# (Several PASS/FAIL messages below use a literal "~/..." for readability
-# in human-facing output - these are display strings, not paths being
-# expanded, so the tilde is intentionally not expanded.)
+# Every `zsh -i -c` probe below is bounded: it runs with stdin closed
+# (</dev/null) under a ~20s timeout (`timeout`, else `gtimeout`, else a perl
+# alarm wrapper, since a bare macOS PATH has none of the first two). A probe
+# that times out is reported as `[FAIL] interactive zsh init hung after Ns`
+# and the run continues, so a shell startup that blocks (e.g. a CLI waiting
+# on an auth prompt in ~/.zshrc) can never hang doctor.sh itself. Values
+# passed to a probe are positional arguments, never spliced into the script.
+#
+# shellcheck disable=SC2088,SC2016
+# (SC2088: several PASS/FAIL messages below use a literal "~/..." for
+# readability in human-facing output - these are display strings, not paths
+# being expanded, so the tilde is intentionally not expanded.
+# SC2016: the zsh_probe scripts are single-quoted on purpose, so their
+# $-expressions expand in the zsh probe, not in this bash script.)
 set -uo pipefail
 
 # ---- output helpers --------------------------------------------------------
@@ -46,6 +56,84 @@ if [ -z "$SOURCE_DIR" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
   SOURCE_DIR="$(dirname "$SCRIPT_DIR")"
 fi
+
+# ---- bounded interactive-zsh probes ----------------------------------------
+# Seconds an interactive zsh probe may run before it is declared hung.
+# DOCTOR_ZSH_TIMEOUT overrides it (used to test the hang path quickly).
+ZSH_PROBE_TIMEOUT="${DOCTOR_ZSH_TIMEOUT:-20}"
+if command -v timeout >/dev/null 2>&1; then
+  BOUND_KIND="timeout"
+elif command -v gtimeout >/dev/null 2>&1; then
+  BOUND_KIND="gtimeout"
+elif command -v perl >/dev/null 2>&1; then
+  BOUND_KIND="perl"
+else
+  BOUND_KIND=""
+fi
+
+# run_bounded SECS CMD [ARGS...]: run CMD, killing it after SECS seconds.
+# Exits 124 (timeout/gtimeout), 137 (needed SIGKILL), or 142 / 14 (perl's
+# SIGALRM) on expiry; 127 if there is no way to bound the command at all.
+# GNU timeout (without --foreground) signals the child's whole process group.
+run_bounded() {
+  local secs="$1"
+  shift
+  case "$BOUND_KIND" in
+    timeout | gtimeout) "$BOUND_KIND" -k 2 "$secs" "$@" ;;
+    perl) perl -e 'alarm shift; exec @ARGV' "$secs" "$@" ;;
+    *) return 127 ;;
+  esac
+}
+
+# zsh_probe SCRIPT [ARG...]: run `zsh -i -c SCRIPT ARG...` bounded, stdin
+# closed, stderr discarded. Output goes through a temp FILE, not a pipe: a
+# process the shell backgrounded (or an orphaned grandchild that outlives the
+# killed zsh) would otherwise hold a pipe open and block `$(...)` until it
+# exits, defeating the timeout. Sets (not prints, so callers keep the state):
+#   PROBE_OUT   captured stdout
+#   PROBE_STATE ok | hung | unavailable (no zsh, or nothing to bound it with)
+# ARGs are passed positionally to the script ("$@" inside it), never spliced
+# into the script text. Callers pad argv with a leading "zsh" so it lands in
+# $0.
+zsh_probe() {
+  local rc tmp
+  PROBE_OUT=""
+  if ! command -v zsh >/dev/null 2>&1 || [ -z "$BOUND_KIND" ]; then
+    PROBE_STATE="unavailable"
+    return 0
+  fi
+  tmp="$(mktemp "${TMPDIR:-/tmp}/doctor-probe.XXXXXX")" || {
+    PROBE_STATE="unavailable"
+    return 0
+  }
+  run_bounded "$ZSH_PROBE_TIMEOUT" zsh -i -c "$@" </dev/null >"$tmp" 2>/dev/null
+  rc=$?
+  # perl's alarm delivers SIGALRM, which zsh itself handles by exiting with
+  # status 14 (not the usual 128+14=142), so accept both under that wrapper.
+  if [ "$BOUND_KIND" = "perl" ] && [ "$rc" -eq 14 ]; then
+    rc=142
+  fi
+  case "$rc" in
+    124 | 137 | 142) PROBE_STATE="hung" ;;
+    *)
+      PROBE_STATE="ok"
+      PROBE_OUT="$(cat "$tmp")"
+      ;;
+  esac
+  rm -f "$tmp"
+  return 0
+}
+
+# report_zsh_hung WHAT: the standard FAIL for a timed-out probe.
+report_zsh_hung() {
+  fail "interactive zsh init hung after ${ZSH_PROBE_TIMEOUT}s (while checking ${1})." \
+    "Something in ~/.zshrc, ~/.zshrc.local, or oh-my-zsh blocks without a TTY (a CLI waiting on an auth prompt is the usual cause). Find it with: zsh -i -c exit </dev/null"
+}
+
+# report_zsh_unavailable WHAT: probes cannot run (no zsh / no bounding tool).
+report_zsh_unavailable() {
+  warn "Skipped interactive-zsh checks for ${1}: no zsh, or no timeout/gtimeout/perl to bound the probe. Install coreutils (brew install coreutils) so a hung shell startup cannot hang doctor.sh."
+}
 
 # =============================================================================
 section "Homebrew"
@@ -189,6 +277,24 @@ PROFILE_PATH="${HOME_DIR}/Library/Application Support/iTerm2/DynamicProfiles/Ant
 if [ -f "$PROFILE_PATH" ]; then
   if command -v jq >/dev/null 2>&1 && jq empty "$PROFILE_PATH" >/dev/null 2>&1; then
     pass "iTerm2 Dynamic Profile is installed and is valid JSON."
+    # Is the Anthropic profile iTerm2's DEFAULT (used for new windows/tabs)?
+    # Installing a Dynamic Profile does not make it the default; the
+    # run_once_after_10 script sets it when iTerm2 is closed. Compare
+    # iTerm2's stored default GUID with the profile's own Guid. WARN, not
+    # FAIL: it is a preference, and it may simply not be applied yet.
+    ANTHROPIC_GUID="$(jq -r '[.Profiles[]? | select(.Name == "Anthropic") | .Guid][0] // empty' "$PROFILE_PATH" 2>/dev/null || true)"
+    if [ -z "$ANTHROPIC_GUID" ]; then
+      warn "Could not read the Anthropic profile's Guid from ${PROFILE_PATH}; skipping the default-profile check."
+    elif ! command -v defaults >/dev/null 2>&1; then
+      warn "iTerm2 default-profile check skipped (no 'defaults' command)."
+    else
+      ITERM_DEFAULT_GUID="$(defaults read com.googlecode.iterm2 "Default Bookmark Guid" 2>/dev/null || true)"
+      if [ "$ITERM_DEFAULT_GUID" = "$ANTHROPIC_GUID" ]; then
+        pass "The Anthropic profile is iTerm2's default profile."
+      else
+        warn "The Anthropic profile is NOT iTerm2's default profile (default Guid: '${ITERM_DEFAULT_GUID:-<unset>}', Anthropic Guid: '${ANTHROPIC_GUID}'). Quit iTerm2, then run: defaults write com.googlecode.iterm2 \"Default Bookmark Guid\" -string \"${ANTHROPIC_GUID}\" (or in iTerm2: Settings > Profiles > Anthropic > Other Actions > Set as Default)."
+      fi
+    fi
   elif command -v jq >/dev/null 2>&1; then
     fail "iTerm2 Dynamic Profile exists but is not valid JSON." \
       "Re-copy it: cp \"${SOURCE_DIR}/iterm2/Anthropic.json\" \"${PROFILE_PATH}\""
@@ -233,26 +339,29 @@ section "bat / zsh-syntax-highlighting"
 # bash script's own environment even when correctly configured. Ask a
 # fresh interactive zsh - the same kind of shell a new terminal tab opens -
 # rather than trusting doctor.sh's own inherited environment.
-if command -v zsh >/dev/null 2>&1; then
-  ZSH_BAT_THEME="$(zsh -i -c 'print -r -- "$BAT_THEME"' 2>/dev/null || true)"
-  ZSH_HIGHLIGHTERS="$(zsh -i -c 'print -r -- "${ZSH_HIGHLIGHT_HIGHLIGHTERS[*]}"' 2>/dev/null || true)"
-else
-  ZSH_BAT_THEME=""
-  ZSH_HIGHLIGHTERS=""
-fi
+# Both values come from one bounded interactive-shell spawn.
+zsh_probe 'print -r -- "$BAT_THEME"; print -r -- "${ZSH_HIGHLIGHT_HIGHLIGHTERS[*]}"' zsh
+ZSH_BAT_THEME="$(printf '%s\n' "$PROBE_OUT" | sed -n '1p')"
+ZSH_HIGHLIGHTERS="$(printf '%s\n' "$PROBE_OUT" | sed -n '2p')"
 
-if [ -n "$ZSH_BAT_THEME" ]; then
-  pass "\$BAT_THEME is set in a fresh shell (${ZSH_BAT_THEME})."
+if [ "$PROBE_STATE" = "hung" ]; then
+  report_zsh_hung "\$BAT_THEME and \$ZSH_HIGHLIGHT_HIGHLIGHTERS"
+elif [ "$PROBE_STATE" = "unavailable" ]; then
+  report_zsh_unavailable "\$BAT_THEME and \$ZSH_HIGHLIGHT_HIGHLIGHTERS"
 else
-  fail "\$BAT_THEME is not set in a fresh interactive shell." \
-    "Confirm dot_oh-my-zsh-custom/theme-colors.zsh exists and \$ZSH_CUSTOM/theme-colors.zsh is being auto-sourced by oh-my-zsh."
-fi
+  if [ -n "$ZSH_BAT_THEME" ]; then
+    pass "\$BAT_THEME is set in a fresh shell (${ZSH_BAT_THEME})."
+  else
+    fail "\$BAT_THEME is not set in a fresh interactive shell." \
+      "Confirm dot_oh-my-zsh-custom/theme-colors.zsh exists and \$ZSH_CUSTOM/theme-colors.zsh is being auto-sourced by oh-my-zsh."
+  fi
 
-if printf '%s\n' "$ZSH_HIGHLIGHTERS" | grep -qiw "brackets"; then
-  pass "\$ZSH_HIGHLIGHT_HIGHLIGHTERS includes 'brackets' in a fresh shell."
-else
-  fail "\$ZSH_HIGHLIGHT_HIGHLIGHTERS does not include 'brackets' in a fresh shell." \
-    "Confirm zsh-syntax-highlighting is loaded as a plugin AFTER theme-colors.zsh runs, and that it's last in the plugins=(...) list."
+  if printf '%s\n' "$ZSH_HIGHLIGHTERS" | grep -qiw "brackets"; then
+    pass "\$ZSH_HIGHLIGHT_HIGHLIGHTERS includes 'brackets' in a fresh shell."
+  else
+    fail "\$ZSH_HIGHLIGHT_HIGHLIGHTERS does not include 'brackets' in a fresh shell." \
+      "Confirm zsh-syntax-highlighting is loaded as a plugin AFTER theme-colors.zsh runs, and that it's last in the plugins=(...) list."
+  fi
 fi
 
 # =============================================================================
@@ -265,25 +374,45 @@ if command -v mise >/dev/null 2>&1; then
   # considers itself active, and where it resolves each tool - this is
   # the PATH ordering dot_zshrc.tmpl's shim-reordering fix is meant to
   # guarantee, so it needs to be checked in that same kind of shell.
-  if command -v zsh >/dev/null 2>&1; then
-    MISE_ACTIVE="$(zsh -i -c 'print -r -- "${MISE_SHELL:-}"' 2>/dev/null || true)"
-  else
-    MISE_ACTIVE=""
+  #
+  # One bounded spawn covers MISE_SHELL plus every tool's `command -v`. Tool
+  # names are passed as positional arguments ("$@"), never spliced into the
+  # script string, so a tool name can never be interpreted as shell syntax.
+  MISE_TOOLS=(claude python3)
+  zsh_probe '
+    print -r -- "${MISE_SHELL:-}"
+    for t in "$@"; do
+      print -r -- "$(command -v -- "$t" 2>/dev/null)"
+    done
+  ' zsh "${MISE_TOOLS[@]}"
+  MISE_QUERY="$PROBE_OUT"
+  MISE_PROBE_STATE="$PROBE_STATE"
+  if [ "$MISE_PROBE_STATE" = "unavailable" ]; then
+    # No zsh (or nothing to bound it with): resolve tools in this script's
+    # own environment. Line 1 stays blank (no interactive shell to ask).
+    MISE_QUERY="
+"
+    for tool in "${MISE_TOOLS[@]}"; do
+      MISE_QUERY="${MISE_QUERY}$(command -v "$tool" 2>/dev/null)
+"
+    done
   fi
+  MISE_ACTIVE="$(printf '%s\n' "$MISE_QUERY" | sed -n '1p')"
 
-  if [ -n "$MISE_ACTIVE" ]; then
+  if [ "$MISE_PROBE_STATE" = "hung" ]; then
+    report_zsh_hung "mise activation and tool resolution"
+  elif [ -n "$MISE_ACTIVE" ]; then
     pass "mise is active in a fresh interactive shell (MISE_SHELL=${MISE_ACTIVE})."
   else
     fail "mise does not appear active in a fresh interactive shell." \
       "Confirm 'eval \"\$(mise activate zsh)\"' runs unconditionally near the end of dot_zshrc.tmpl."
   fi
 
-  for tool in claude python3; do
-    if command -v zsh >/dev/null 2>&1; then
-      RESOLVED="$(zsh -i -c "command -v ${tool}" 2>/dev/null || true)"
-    else
-      RESOLVED="$(command -v "$tool" 2>/dev/null || true)"
-    fi
+  line_num=1
+  for tool in "${MISE_TOOLS[@]}"; do
+    [ "$MISE_PROBE_STATE" = "hung" ] && break
+    line_num=$((line_num + 1))
+    RESOLVED="$(printf '%s\n' "$MISE_QUERY" | sed -n "${line_num}p")"
     if [ -z "$RESOLVED" ]; then
       warn "'${tool}' does not resolve to anything on PATH (may not be installed)."
     elif printf '%s' "$RESOLVED" | grep -q "/mise/shims/"; then
@@ -303,7 +432,7 @@ section "Required CLIs"
 # Source of truth: the Brewfile (core tier). This list is every `brew`
 # formula there that installs a standalone binary on PATH (bat, fzf, gh,
 # jq, ripgrep -> rg, mise), plus the two casks that install a CLI rather
-# than a GUI app (1password-cli -> op, claude-code -> claude). chezmoi is
+# than a GUI app (1password-cli -> op, claude-code@latest -> claude). chezmoi is
 # checked separately above. zsh-autosuggestions and zsh-syntax-highlighting
 # are also in the Brewfile but are zsh plugins sourced by the shell, not
 # binaries on PATH, so they don't belong here. If the Brewfile changes,

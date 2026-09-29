@@ -260,7 +260,8 @@ means and what to type:
 Homebrew installing/checking packages (this is the slowest part, several
 minutes), a check for `~/.oh-my-zsh` (safe to ignore on a brand-new
 machine), then chezmoi writing your dotfiles, then notes about the
-iTerm2 profile and Claude Code theme being installed.
+iTerm2 profile (and whether it could be set as iTerm2's default) and
+Claude Code theme being installed.
 
 **If this fails:**
 - If a specific Homebrew formula or cask fails partway through, that's
@@ -289,19 +290,29 @@ git branch info, etc.) instead of the plain default prompt.
 **If this fails:** if the new prompt doesn't show up, double-check you
 actually opened a *new* shell (an old tab keeps its old environment).
 
-### Step 6: Select the iTerm2 profile
+### Step 6: Confirm the iTerm2 profile is the default
 
 `chezmoi apply` already copied the Anthropic color profile into iTerm2's
-Dynamic Profiles folder. iTerm2 has to be told to actually use it; this
-part is a menu, not a command, so there's nothing to click Run on here.
+Dynamic Profiles folder, and it also tries to make Anthropic iTerm2's
+default profile for you. It can only do that if iTerm2 was **not
+running** during setup: iTerm2 saves its preferences when it quits, so a
+setting written while it is open would be overwritten. (The setup script
+never quits iTerm2 for you.)
+
+Check whether it worked:
 
 ```bash
-killall iTerm2 2>/dev/null; open -a iTerm
+defaults read com.googlecode.iterm2 "Default Bookmark Guid"
 ```
 
-**You should see:** iTerm2 quit and reopen.
+**You should see:** `67AF76AE-1E09-5AC8-966F-6B27A069454B`, which is the
+Anthropic profile's ID. Open a new iTerm2 window: it should be themed
+with the Anthropic colors.
 
-Now select the profile manually, through the menus, step by step:
+**If you see a different ID (or an error), or iTerm2 was open during
+setup:** the automatic step was skipped, and you only need to do the
+manual steps below. They work while iTerm2 is open. This part is a menu,
+not a command, so there's nothing to click Run on here.
 
 1. Click the **iTerm2** menu at the top of the screen, then **Settings**
    (older versions call this **Preferences**), then **Profiles**.
@@ -311,8 +322,18 @@ Now select the profile manually, through the menus, step by step:
    **Set as Default**.
 
 That gear-icon step is the one that matters: without it, this profile
-only applies to windows you switch by hand. There's no command that can
-do this for you; it's a one-time menu click.
+only applies to windows you switch by hand.
+
+Alternatively, quit iTerm2 (**iTerm2** menu, then **Quit iTerm2**),
+reopen it, and re-run the setup script, which will now set the default
+by itself:
+
+```bash
+bash "$(chezmoi source-path)/run_once_after_10-install-iterm2-profile.sh"
+```
+
+Step 8's `doctor.sh` also checks this and prints a warning (not a
+failure) if Anthropic is not the default profile.
 
 **If this fails:** if "Anthropic" doesn't appear in the profile list at
 all, see Troubleshooting.
