@@ -29,19 +29,21 @@ detail.**
 
 ### Doctor script caveat
 
-`bin/doctor.sh`'s "Required CLIs" section checks for `nvim`, `linear`,
-and `op` in addition to tools this Brewfile still installs. As of this
-rewrite, the shared-tier Brewfile intentionally no longer installs
-neovim or the `schpet/tap/linear` CLI (the Linear MCP server supersedes
-it), so a correctly-set-up `shared`-profile machine will show `[FAIL]`
-for `nvim` and `linear`, and `bin/doctor.sh` will exit non-zero even
-though nothing is actually wrong. `op` will only resolve if the human
-answered `true` to the 1Password question in step 4. Report these as
-expected, not as setup failures, and do not attempt to install neovim or
-the `schpet/tap` tap to silence them; that would reintroduce the
-tooling this rewrite intentionally removed. Fixing `doctor.sh` itself is
-a separate, deliberate change outside this document's scope, flag it to
-a human instead of patching it inline.
+`bin/doctor.sh`'s "Required CLIs" section checks for `bat`, `fzf`, `gh`,
+`jq`, `rg`, `mise`, `op`, `claude`, `node`, and `npm`. Since commit
+`6923336` it no longer checks `nvim` or `linear`, which the shared-tier
+Brewfile intentionally does not install, so a correctly set-up
+`shared`-profile machine should exit `0`.
+
+`node` and `npm` come from mise, not the Brewfile:
+`dot_config/mise/config.toml` pins `node = "lts"`, and
+`run_onchange_after_25-mise-install.sh.tmpl` runs `mise install` during
+`chezmoi apply`. If either shows `[FAIL]`, run `mise install`, then open
+a fresh shell (or `exec zsh -l`) and re-run the doctor. If `mise` itself
+is missing, Homebrew was probably blocked by IT: get it installed and run
+`brew bundle --file="$(chezmoi source-path)/Brewfile"` first. Report a
+persistent failure to the human; do not work around it with a different
+Node installer.
 
 ### Driving `chezmoi init` non-interactively
 

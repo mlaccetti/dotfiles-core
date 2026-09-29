@@ -445,6 +445,19 @@ for cli in bat fzf gh jq rg mise op claude; do
   fi
 done
 
+# node and npm are not in the Brewfile: mise installs Node.js (which bundles
+# npm) from dot_config/mise/config.toml via run_onchange_after_25-mise-install.
+# They are required because building web apps with Claude and
+# `npm install -g @salesforce/cli` both need them. They have their own loop
+# because the fix is `mise install`, not `brew bundle`.
+for cli in node npm; do
+  if command -v "$cli" >/dev/null 2>&1; then
+    pass "'${cli}' is installed."
+  else
+    fail "'${cli}' is not installed." "Run: mise install (installs Node.js and npm from ~/.config/mise/config.toml). If mise itself is missing, run brew bundle --file=\"${SOURCE_DIR}/Brewfile\" first, then open a new terminal window."
+  fi
+done
+
 # =============================================================================
 section "Summary"
 # =============================================================================

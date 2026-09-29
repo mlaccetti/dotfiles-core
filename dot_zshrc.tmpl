@@ -126,10 +126,45 @@ else
   compinit -C
 fi
 
-# ngrok completions
-if command -v ngrok &>/dev/null; then
-  eval "$(ngrok completion)"
+# ngrok completions (cached)
+# `ngrok completion` used to run on every shell start. On another machine it
+# sat waiting on an authentication prompt in ngrok's UI, which hung every
+# interactive shell (and doctor.sh's probes). The completion script is now
+# cached and sourced; sourcing the cached output is equivalent to the old
+# `eval "$(ngrok completion)"`. Once the cache exists, shell startup never
+# executes ngrok. Regeneration happens only when the cache is missing or
+# older than the ngrok binary, and is bounded: stdin closed, a timeout, and
+# a temp file moved into place only on success (a failed or partial run never
+# leaves a broken cache). With neither `timeout` nor `gtimeout` on PATH,
+# regeneration is skipped rather than risking a hang. After a failed attempt
+# it is not retried for an hour, so a hung/unauthenticated ngrok cannot add a
+# timeout delay to every new shell. No-op for anyone without ngrok.
+_ngrok_completion_refresh() {
+  local bin cache to tmp stamp
+  bin="$(whence -p ngrok)" || return 0
+  [[ -n $bin ]] || return 0
+  cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/ngrok-completion.zsh"
+  stamp="${cache}.failed"
+  [[ -s $cache && ! $bin -nt $cache ]] && return 0
+  to="$(whence -p timeout || whence -p gtimeout)" || return 0
+  [[ -n $to ]] || return 0
+  [[ -e $stamp && -n "$(find "$stamp" -mmin -60 2>/dev/null)" ]] && return 0
+  mkdir -p "${cache:h}" || return 0
+  tmp="${cache}.tmp.$$"
+  if "$to" -k 2 10 "$bin" completion </dev/null >"$tmp" 2>/dev/null && [[ -s $tmp ]]; then
+    mv -f "$tmp" "$cache" && rm -f "$stamp"
+  else
+    rm -f "$tmp"
+    : >"$stamp"
+  fi
+  return 0
+}
+if (( $+commands[ngrok] )); then
+  _ngrok_completion_refresh
+  [[ -s "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/ngrok-completion.zsh" ]] \
+    && source "${XDG_CACHE_HOME:-$HOME/.cache}/zsh/ngrok-completion.zsh"
 fi
+unfunction _ngrok_completion_refresh
 
 # =============================================================================
 # Tool Initialization (must be at end)
@@ -142,7 +177,7 @@ export SDKMAN_DIR="$HOME/.sdkman"
 [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
 {{- end }}
 
-# mise (handles pnpm and other tools)
+# mise (Node.js/npm and other tools; see dot_config/mise/config.toml)
 if command -v mise >/dev/null 2>&1; then
   eval "$(mise activate zsh)"
 
