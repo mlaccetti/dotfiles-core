@@ -1,0 +1,16 @@
+# Global mise config, placed at ~/.config/mise/config.toml by chezmoi.
+#
+# Every tool listed here is installed by run_onchange_after_25-mise-install.sh.tmpl
+# and put on PATH by `mise activate` in ~/.zshrc.
+#
+# node: the current LTS release. It includes `npm`, which is all that's
+# needed to build small web apps with Claude and to run
+# `npm install -g @salesforce/cli`. "lts" tracks the newest LTS line, so
+# a re-install picks up a new major version when Node promotes one.
+#
+# pnpm is deliberately not listed: npm covers everything above, and a
+# second package manager is one more thing to explain and keep working.
+# Add `pnpm = "latest"` here if a project ever needs it; the install
+# script re-runs on its own when this file changes.
+[tools]
+node = "lts"

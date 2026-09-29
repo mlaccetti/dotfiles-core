@@ -261,7 +261,9 @@ Homebrew installing/checking packages (this is the slowest part, several
 minutes), a check for `~/.oh-my-zsh` (safe to ignore on a brand-new
 machine), then chezmoi writing your dotfiles, then notes about the
 iTerm2 profile (and whether it could be set as iTerm2's default) and
-Claude Code theme being installed.
+Claude Code theme being installed. It also installs Node.js (and its
+`npm` command) automatically through `mise`, which Step 11 and many small
+web apps rely on.
 
 **If this fails:**
 - If a specific Homebrew formula or cask fails partway through, that's
@@ -466,9 +468,9 @@ npm install -g @salesforce/cli
 **You should see:** npm download and install the `sf` command. Confirm
 it worked with `sf --version`.
 
-**If this fails:** if `npm` itself isn't found, this laptop doesn't have
-Node.js installed yet; ask in your team's Claude Code channel, since
-that's normally set up per-project by `mise` rather than here.
+**If this fails:** if `npm` itself isn't found, Node.js didn't finish
+installing in Step 4 (often a network or IT block). Run `mise install`,
+then open a new terminal window and try again.
 
 Then log in:
 

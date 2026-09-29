@@ -1,0 +1,59 @@
+#!/bin/bash
+# Installs the tools listed in ~/.config/mise/config.toml (Node.js and npm).
+#
+# chezmoi writes that config file, but mise installs nothing until told to.
+# This script tells it to, after `chezmoi apply` has placed the config.
+# It runs after the brew bundle step (run_once_before_02), which installs
+# mise itself, and it re-runs whenever the config changes because the hash
+# below changes:
+# mise config hash: {{ include "dot_config/mise/config.toml" | sha256sum }}
+#
+# Safe to re-run: mise skips anything that's already installed.
+#
+# Unlike the other scripts in this repo, this one uses `set -e`. The two
+# expected failures (mise missing, install failing) are handled explicitly
+# and exit 0 with an action message, so a blocked install never aborts the
+# rest of `chezmoi apply`.
+set -euo pipefail
+
+echo "==> [mise] Installing runtimes from ~/.config/mise/config.toml (Node.js)..."
+
+# A fresh machine's chezmoi process may not have Homebrew on PATH yet, so
+# fall back to the standard Homebrew locations.
+MISE_BIN="$(command -v mise 2>/dev/null || true)"
+if [ -z "$MISE_BIN" ]; then
+  for candidate in /opt/homebrew/bin/mise /usr/local/bin/mise; do
+    if [ -x "$candidate" ]; then
+      MISE_BIN="$candidate"
+      break
+    fi
+  done
+fi
+
+if [ -z "$MISE_BIN" ]; then
+  echo "    !! mise isn't installed (Homebrew may be missing or blocked by IT)."
+  echo "    !! Without it there is no Node.js or npm on this machine."
+  echo "    !! ACTION NEEDED: get Homebrew and mise installed (see the brew bundle"
+  echo "    !! step's output above), then run:"
+  echo "    !!   mise install"
+  echo "    Skipping for now."
+  exit 0
+fi
+
+echo "    Using mise: ${MISE_BIN}"
+
+# Run from $HOME so only the global config applies, not whatever project
+# directory chezmoi was launched from.
+cd "$HOME"
+
+if "$MISE_BIN" install --yes; then
+  echo "    Runtimes installed/verified (Node.js and npm)."
+else
+  echo "    !! mise could not finish installing. This is usually a network"
+  echo "    !! problem or a corporate proxy/firewall blocking nodejs.org."
+  echo "    !! ACTION NEEDED: check the output above, then run:"
+  echo "    !!   mise install"
+  echo "    Continuing with the rest of the setup."
+fi
+
+exit 0
