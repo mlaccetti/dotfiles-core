@@ -155,14 +155,18 @@ if ! vm_exists "$READY_VM"; then
   if ! vm_exists "$BASE_VM"; then
     tart clone "$BASE_IMAGE" "$BASE_VM" || die "could not pull $BASE_IMAGE"
   fi
-  CURRENT_VM="$BASE_VM"
-  boot_vm "$BASE_VM"
+  # Provision a throwaway clone, never the base: the base must stay the vendor
+  # image so a rebuild always proves the script from a clean start.
+  BUILD_VM="her-sandbox-build-${STAMP}"
+  tart clone "$BASE_VM" "$BUILD_VM" || die "could not clone $BASE_VM"
+  CURRENT_VM="$BUILD_VM"
+  boot_vm "$BUILD_VM"
   vm_scp "$HERE/provision-her-state.sh" "admin@$VM_IP:provision-her-state.sh" || die "could not copy the provisioning script"
   vm_ssh "$VM_IP" 'bash ~/provision-her-state.sh' 2>&1 | tee "$REPORT_DIR/provision.log"
   [ "${PIPESTATUS[0]}" -eq 0 ] || die "provisioning failed (see $REPORT_DIR/provision.log)"
-  tart stop "$BASE_VM" >/dev/null 2>&1
+  tart stop "$BUILD_VM" >/dev/null 2>&1
+  tart rename "$BUILD_VM" "$READY_VM" || die "could not rename $BUILD_VM to $READY_VM"
   CURRENT_VM=""
-  tart clone "$BASE_VM" "$READY_VM" || die "could not clone $BASE_VM to $READY_VM"
 fi
 
 # ---------------------------------------------------------------- 4. fresh run VM
