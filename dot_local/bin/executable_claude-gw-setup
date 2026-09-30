@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+# claude-gw-setup: one-time (re-runnable) setup for `claude-gw`.
+#
+# Asks for the company gateway address and token, then writes:
+#   ~/.config/claude-gw/            (private folder, mode 0700)
+#   ~/.config/claude-gw/token       (the token only, mode 0600)
+#   ~/.config/claude-gw/settings.json (mode 0600; the gateway address and an
+#                                      apiKeyHelper that reads the token file.
+#                                      It contains no secret.)
+#
+# Usage: claude-gw-setup [--no-check]
+#   --no-check   skip the optional connection test
+#
+# Works with macOS's stock /bin/bash 3.2.
+set -eu
+umask 077
+
+check=ask
+for arg in "$@"; do
+  case "$arg" in
+    --no-check) check=no ;;
+    -h|--help)
+      echo "Usage: claude-gw-setup [--no-check]"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $arg" >&2
+      echo "Usage: claude-gw-setup [--no-check]" >&2
+      exit 2
+      ;;
+  esac
+done
+
+cfg="$HOME/.config/claude-gw"
+
+say() { printf '%s\n' "$*" >&2; }
+die() { say ""; say "Setup did not finish: $*"; exit 1; }
+
+# Trim leading and trailing whitespace (bash 3.2 safe).
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"
+  s="${s%"${s##*[![:space:]]}"}"
+  printf '%s' "$s"
+}
+
+# True if the value contains a quote, backslash, whitespace or control character.
+has_unsafe_chars() {
+  case "$1" in
+    *[\"\'\\[:space:][:cntrl:]]*) return 0 ;;
+  esac
+  return 1
+}
+
+# The helper command wraps the path in single quotes, and the path goes into
+# JSON, so the folder path must not contain quotes or backslashes.
+case "$cfg" in
+  *[\"\'\\]*)
+    die "your home folder path contains a quote or backslash, which this setup can't handle safely."
+    ;;
+esac
+
+say "Claude gateway setup"
+say "You'll need the gateway address and token from whoever runs the gateway at your company."
+say ""
+
+printf 'Gateway address (starts with https://): ' >&2
+IFS= read -r url || url=""
+url="$(trim "$url")"
+while [ -n "$url" ] && [ "${url%/}" != "$url" ]; do
+  url="${url%/}"
+done
+
+[ -n "$url" ] || die "the gateway address is required."
+case "$url" in
+  https://?*) ;;
+  *) die "the gateway address must start with https://" ;;
+esac
+if has_unsafe_chars "$url"; then
+  die "the gateway address must not contain quotes, backslashes, or spaces."
+fi
+
+printf 'Gateway token (typing is hidden): ' >&2
+IFS= read -r -s token || token=""
+say ""
+token="$(trim "$token")"
+
+[ -n "$token" ] || die "the gateway token is required."
+case "$token" in
+  *[[:space:][:cntrl:]]*) die "the token must not contain spaces or line breaks. Copy just the token." ;;
+esac
+
+opus=""
+sonnet=""
+haiku=""
+printf 'Does the gateway need specific model names? (y/N): ' >&2
+IFS= read -r answer || answer=""
+case "$answer" in
+  y|Y|yes|YES|Yes)
+    say "Enter the gateway's name for each model, or press Return to skip one."
+    printf '  Opus model name: ' >&2
+    IFS= read -r opus || opus=""
+    printf '  Sonnet model name: ' >&2
+    IFS= read -r sonnet || sonnet=""
+    printf '  Haiku model name: ' >&2
+    IFS= read -r haiku || haiku=""
+    opus="$(trim "$opus")"
+    sonnet="$(trim "$sonnet")"
+    haiku="$(trim "$haiku")"
+    for m in "$opus" "$sonnet" "$haiku"; do
+      if has_unsafe_chars "$m"; then
+        die "model names must not contain quotes, backslashes, or spaces."
+      fi
+    done
+    ;;
+esac
+
+# Write everything.
+mkdir -p "$cfg"
+chmod 700 "$cfg"
+
+: > "$cfg/token"
+chmod 600 "$cfg/token"
+printf '%s' "$token" > "$cfg/token"
+
+env_lines="    \"ANTHROPIC_BASE_URL\": \"$url\""
+[ -z "$opus" ] || env_lines="$env_lines,
+    \"ANTHROPIC_DEFAULT_OPUS_MODEL\": \"$opus\""
+[ -z "$sonnet" ] || env_lines="$env_lines,
+    \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"$sonnet\""
+[ -z "$haiku" ] || env_lines="$env_lines,
+    \"ANTHROPIC_DEFAULT_HAIKU_MODEL\": \"$haiku\""
+
+: > "$cfg/settings.json"
+chmod 600 "$cfg/settings.json"
+cat > "$cfg/settings.json" <<JSON
+{
+  "apiKeyHelper": "cat '$cfg/token'",
+  "env": {
+$env_lines
+  }
+}
+JSON
+
+say ""
+say "Saved your gateway settings in $cfg"
+
+# Optional connection test. The token goes to curl through a header file
+# (process substitution), never on the command line.
+if [ "$check" = ask ]; then
+  printf 'Test the connection now? This sends one tiny request. (Y/n): ' >&2
+  IFS= read -r answer || answer=""
+  case "$answer" in
+    n|N|no|NO|No) check=no ;;
+    *) check=yes ;;
+  esac
+fi
+
+if [ "$check" = yes ]; then
+  model="${haiku:-${sonnet:-${opus:-claude-haiku-4-5}}}"
+  body="{\"model\":\"$model\",\"max_tokens\":1,\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}"
+  set +e
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --connect-timeout 8 --max-time 20 \
+    -X POST "$url/v1/messages" \
+    -H "content-type: application/json" \
+    -H "anthropic-version: 2023-06-01" \
+    -H @<(printf 'Authorization: Bearer %s\nx-api-key: %s\n' "$token" "$token") \
+    -d "$body" 2>/dev/null)"
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    say ""
+    say "Your settings are saved, but I couldn't reach $url to test them."
+    say "Check the address, and check that you're on the company network or VPN if the gateway needs it."
+    say "You can run claude-gw-setup again to fix the address."
+    exit 0
+  fi
+  if [ "$code" = 401 ]; then
+    say ""
+    say "The gateway rejected the token (HTTP 401). Your settings are saved, but they won't work yet."
+    say "Ask whoever runs the gateway to check the token, then run claude-gw-setup again."
+    exit 1
+  fi
+  say ""
+  say "The gateway answered (HTTP $code), so the address and token work."
+fi
+
+say ""
+say "All set. Type claude-gw to use Claude through the company gateway."
+say "Reminder: never type /logout inside claude-gw, because that can sign you out of Enterprise."

@@ -22,9 +22,10 @@ at while you work.
 
 ## Ask for these first
 
-Three things here need someone else to act, not you. None of them block
-the rest of this guide, so start these now and keep going; they can
-finish in the background while you work through the steps below.
+Four things here need someone else to act, not you. None of them block
+the early steps of this guide, so start these now and keep going; they
+can finish in the background while you work through the steps below.
+You'll need the answers by the time you reach the step that uses them.
 
 ### 1. Ask your Atlassian admin to enable MCP access
 
@@ -36,14 +37,14 @@ your Atlassian/Jira account. Send them this:
 > Hi, I'd like to use Claude Code with our Atlassian (Confluence/Jira)
 > account. Could you confirm that Atlassian's Remote MCP server (Rovo) is
 > enabled for our organization? Once it is, I'll connect from my own
-> laptop with `claude mcp add --transport http atlassian
+> laptop with `claude mcp add --transport http atlassian --scope user
 > https://mcp.atlassian.com/v2/mcp` and sign in with my own login, so no
 > credentials need to be shared with me directly.
 
 ### 2. Ask your Salesforce admin whether hosted MCP applies to you (optional)
 
 You can query Salesforce today with a command-line tool no matter what
-edition your org is on (see Step 12 below). Salesforce also offers a
+edition your org is on (see Step 13 below). Salesforce also offers a
 more capable "Hosted MCP" server, but it currently requires Enterprise
 Edition or higher. It's worth asking now so you know which path you're
 on:
@@ -68,6 +69,29 @@ Step 9:
 > else). Could you confirm our SSO/security policy allows browser-based
 > sign-in for these, or let me know if any of them need to be
 > allow-listed first?
+
+### 4. Ask IT about your Claude sign-in, and get your gateway details
+
+This guide sets Claude Code up two ways: signed in to your company's
+Claude Enterprise account, and through your company's LLM gateway (a
+private address plus a token, run by someone at your company). You'll
+switch between them. IT can lock Claude Code to a single login method,
+which would block one of the two, and only the person who runs the
+gateway can give you its address and token. Send this to IT, or to
+whoever runs the gateway (you'll need the answers for Steps 9 and 10):
+
+> Hi, I'm setting up Claude Code on my laptop and I'll use it two ways:
+> signed in to our company Claude Enterprise account, and through our
+> company LLM gateway. Could you help with three things?
+>
+> 1. Please confirm that our Claude Code managed settings don't force a
+>    single login method (the `forceLoginMethod` and `forceLoginOrgUUID`
+>    settings), because that would block one of the two.
+> 2. Please send me the gateway address (a web address starting with
+>    `https://`) and my gateway token, through your password manager or
+>    another secure channel rather than plain chat or email.
+> 3. Please tell me whether the gateway needs specific model names, and
+>    if so, what they are for Opus, Sonnet, and Haiku.
 
 ## Before you start
 
@@ -134,7 +158,7 @@ apps are missing. You can install those later once IT signs off.
 ### Time estimate
 
 30 to 60 minutes if everything installs cleanly, plus however long the
-service connections in Steps 9 to 12 take (each is a couple of minutes
+service connections in Steps 9 to 14 take (each is a couple of minutes
 once you're signed in). Add time if you're waiting on one of the "ask
 first" items above, most of that is waiting, not active work.
 
@@ -216,7 +240,8 @@ retry. If Homebrew itself isn't working, go back to Step 2.
 
 This is the main step. It asks four short questions, then installs the
 Homebrew packages, applies all the dotfiles, and configures iTerm2 and
-Claude Code.
+Claude Code. It also installs two small commands, `claude-gw-setup` and
+`claude-gw`, which you'll use in Step 10.
 
 ```bash
 chezmoi init --apply https://github.com/mlaccetti/dotfiles-core
@@ -262,7 +287,7 @@ minutes), a check for `~/.oh-my-zsh` (safe to ignore on a brand-new
 machine), then chezmoi writing your dotfiles, then notes about the
 iTerm2 profile (and whether it could be set as iTerm2's default) and
 Claude Code theme being installed. It also installs Node.js (and its
-`npm` command) automatically through `mise`, which Step 11 and many small
+`npm` command) automatically through `mise`, which Step 13 and many small
 web apps rely on.
 
 **If this fails:**
@@ -407,56 +432,177 @@ somewhere on the system.
 ## Connecting Claude Code to your tools
 
 Everything up to here has been scaffolding, a nice terminal and shell.
-This section is the actual point: connecting Claude Code to the places
-you do your work, so it can act on your behalf instead of just chatting.
+This section is the actual point: signing in to Claude Code and
+connecting it to the places you do your work, so it can act on your
+behalf instead of just chatting.
 
-Each one below is a service Claude Code talks to over what's called an
-"MCP server," which is just a standard way for Claude to securely read
-and act on a service using your own login. You sign in once per service,
+Claude Code itself needs a login (Steps 9 and 10). Each service after
+that is something Claude Code talks to over what's called an "MCP
+server," which is just a standard way for Claude to securely read and
+act on a service using your own login. You sign in once per service,
 normally, in a browser window. Claude never sees your password.
 
-### Step 9: Connect Claude Code to Linear
+### Step 9: Sign in to Claude Code with your work account
 
-This is the first time this guide actually runs `claude`. The first
-time you do, macOS may show a dialog saying it can't verify the app.
-That's expected for software installed outside the App Store, it
-doesn't mean anything is wrong. Click **Open** or **Open Anyway**. If
-the dialog doesn't offer that button, open **System Settings > Privacy
-& Security**, scroll down, and click **Open Anyway** next to the
-message about `claude`. This is a one time thing on this computer; future Claude Code updates will not ask again.
+Your company gives you Claude through its Claude Enterprise account.
+You'll sign in to it once here. After that, plain `claude` uses it
+every time.
+
+The first time you run `claude`, macOS may show a dialog saying it
+can't verify the app. That's expected for software installed outside the
+App Store, it doesn't mean anything is wrong. Click **Open** or **Open
+Anyway**. If the dialog doesn't offer that button, open **System
+Settings > Privacy & Security**, scroll down, and click **Open Anyway**
+next to the message about `claude`. This is a one time thing on this
+computer; future Claude Code updates will not ask again.
 
 ```bash
-claude mcp add --transport http linear-server https://mcp.linear.app/mcp
+claude
 ```
 
+**You should see:** Claude Code ask how you want to log in.
+
+1. Choose the **Claude account** option (the one that mentions Pro, Max,
+   Team, or Enterprise). Do **not** choose the Console / API key option.
+2. A browser window opens. Sign in with your **work email**. Your
+   company probably uses single sign-on (SSO), so you may land on your
+   company's normal login page.
+3. Go back to the terminal. Answer any other first-time questions (like
+   the color theme or trusting the folder) with the suggested default.
+
+Once you see the Claude Code prompt, you're signed in. Type `/exit` to
+leave for now.
+
+**If this fails:** if the browser window never opens or the sign-in is
+blocked, that's the SSO issue from "Ask for these first," item 3; check
+with IT. If it says your account has no access, ask IT to confirm your
+work email has a Claude Enterprise seat. If you picked the Console
+option by mistake, type `/logout` (this is fine in plain `claude`, just
+never in `claude-gw`), then run `claude` again and choose the Claude
+account option. If Claude Code says the command isn't recognized, open a
+new terminal window (Claude Code was installed in Step 4).
+
+### Step 10: Set up the company gateway
+
+Your company also runs an LLM gateway. You set it up once, and then
+`claude-gw` uses it. You need the gateway address and your gateway
+token from whoever runs the gateway at your company (that's item 4 in
+"Ask for these first"). Have them ready.
+
+```bash
+claude-gw-setup
+```
+
+It asks you a few questions:
+
+1. **Gateway address.** Paste the address that starts with `https://`.
+2. **Gateway token.** Paste your token. Nothing appears on screen while
+   you paste or type it. That's on purpose, so nobody looking over your
+   shoulder can read it. Press Return when you're done.
+3. **Does the gateway need specific model names?** Type `n` unless
+   whoever gave you the gateway told you it uses its own model names. If
+   they did, type `y` and enter the Opus, Sonnet, and Haiku names you
+   were given (press Return to skip one you weren't given).
+4. **Test the connection now?** Press Return to say yes. It sends one
+   tiny test request to the gateway.
+
+**You should see:** "The gateway answered (HTTP ...), so the address and
+token work," then "All set." Your token is saved in a private file only
+your account can read (`~/.config/claude-gw/`). It is never written into
+your regular Claude Code settings.
+
+**If this fails:**
+- "command not found": run `chezmoi apply` to install the commands, then
+  open a new terminal window.
+- "The gateway rejected the token": the token was mistyped, or it isn't
+  valid. Get it again from whoever runs the gateway and re-run
+  `claude-gw-setup`. It's safe to re-run at any time.
+- "couldn't reach": check the address, and check that you're on the
+  company network or VPN if the gateway needs it.
+
+#### Which one to use: `claude` or `claude-gw`
+
+Use `claude` for work through the company's Claude Enterprise account.
+Use `claude-gw` when you need the company gateway instead. It takes the
+same commands but signs in with your saved gateway token, so some
+Claude.ai features, like apps connected on the Claude website, won't
+appear there.
+
+```bash
+claude-gw
+```
+
+> **Never type `/logout` inside `claude-gw`.** It can sign you out of
+> Enterprise, and you'd have to sign in again with `claude`. If a gateway
+> session shows a warning about a saved login, ignore it and do not log
+> out.
+
+Other things that work differently in `claude-gw`:
+
+- Usage is billed to the gateway, not to your Enterprise account.
+- Your Linear and Atlassian connections (Steps 11 and 12) work in both,
+  because they're added with `--scope user`. Anything connected only
+  through the Claude website appears only in plain `claude`.
+- Company settings pushed to your Enterprise account may not apply.
+- Remote control and voice don't work.
+
+Switching is just typing the other name. Nothing to undo: your
+Enterprise sign-in stays saved while you use the gateway.
+
+### Step 11: Connect Claude Code to Linear
+
+This connects Claude Code to Linear.
+
+```bash
+claude mcp add --transport http linear-server --scope user https://mcp.linear.app/mcp
+```
+
+The `--scope user` part matters. It makes the connection available no
+matter which folder you open Claude Code in, and in both `claude` and
+`claude-gw`. Without it, Claude Code saves the connection only for the
+folder you were in when you ran the command, and it seems to disappear
+everywhere else.
+
 **You should see:** Claude Code print a confirmation that the server
-was added, then open (or ask you to open) a browser window to log in to
-Linear normally. Approve access there.
+was added. It isn't signed in yet, which is the next part.
+
+To sign in, start `claude` (plain `claude`, not `claude-gw`):
+
+```bash
+claude
+```
+
+Then type `/mcp`, choose **linear-server**, and follow the steps in the
+browser window that opens to log in to Linear normally. Approve access
+there. When it's done, `/mcp` shows Linear as connected. Type `/exit`
+to leave.
 
 **If this fails:** if the browser window never opens or the sign-in is
 blocked, that's the SSO issue from "Ask for these first" above; check
-with IT. If Claude Code says the command isn't recognized, open a new
-terminal window (Claude Code was installed in Step 4).
+with IT. If the browser doesn't open by itself, copy the web address
+Claude Code shows and open it yourself.
 
-### Step 10: Connect Claude Code to Confluence and Jira
+### Step 12: Connect Claude Code to Confluence and Jira
 
 This uses Atlassian's own official connector. It only works once your
 Atlassian admin has enabled it, which is the first "ask for these first"
 item above.
 
 ```bash
-claude mcp add --transport http atlassian https://mcp.atlassian.com/v2/mcp
+claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp
 ```
 
-**You should see:** the same pattern as Step 9: a confirmation, then a
-browser sign-in to your Atlassian account.
+**You should see:** a confirmation that the server was added. Then sign
+in the same way as Step 11: run `claude`, type `/mcp`, choose
+**atlassian**, and follow the steps in the browser to log in to your
+Atlassian account.
 
 **If this fails:** an error mentioning access being disabled usually
 means your admin hasn't enabled Rovo/MCP yet; that's the email from
 "Ask for these first," item 1. A sign-in that never completes is
 usually the SSO issue from item 3.
 
-### Step 11: Connect Claude Code to Salesforce (optional)
+### Step 13: Connect Claude Code to Salesforce (optional)
 
 Salesforce has a command-line tool that works on any org edition. Skip
 this step entirely if you don't use Salesforce.
@@ -488,7 +634,7 @@ Edition or higher (item 2), ask whether Salesforce's Hosted MCP Server is
 a better fit than this CLI; either way, Claude Code can use whichever
 one is connected.
 
-### Step 12: Connect Claude Code to GitHub and Netlify
+### Step 14: Connect Claude Code to GitHub and Netlify
 
 These cover the other two things in your actual goal: automating git
 (opening pull requests, checking status) and deploying small webapps
@@ -529,6 +675,11 @@ create) a Netlify account, then the terminal confirms you're logged in.
 | A command like `bat`, `fzf`, or `chezmoi` says "command not found" right after install | You're still in the old shell from before Homebrew/chezmoi was on `PATH` | Open a brand-new terminal window (not just a new tab in some setups), or run `exec zsh -l`. |
 | `claude` produces no output and never finishes (looks frozen) | macOS Gatekeeper is waiting on a security confirmation, possibly behind another window | Look for the dialog (check other windows and **System Settings > Privacy & Security**), approve it, then try again. Pressing Ctrl+C to cancel is safe. |
 | A browser sign-in window never opens, or opens and then errors | Corporate SSO or security software is blocking it | This is the item 3 "ask first" issue; confirm with IT that browser-based sign-in is allowed for the specific tool. |
+| `claude-gw` says "Run claude-gw-setup first." | The gateway hasn't been set up on this computer yet, or its saved settings were deleted | Run `claude-gw-setup` (Step 10). You'll need the gateway address and token from whoever runs the gateway. |
+| The gateway rejects your token ("401", "unauthorized", or "invalid API key") | The saved token is wrong, expired, or was revoked | Get a fresh token from whoever runs the gateway, then run `claude-gw-setup` again and paste it in. |
+| A "model not found" (or similar) error in `claude-gw` | The gateway uses its own model names | Ask whoever runs the gateway for its Opus, Sonnet, and Haiku model names, then run `claude-gw-setup` again and answer `y` to the model names question. |
+| Your Enterprise login seems gone after using the gateway (plain `claude` asks you to log in again) | You probably typed `/logout` inside `claude-gw`, which signs you out of Enterprise | Run `claude` and sign in again with your work email (Step 9). Then use `claude-gw` without `/logout`. |
+| Linear or Atlassian works in one folder but is missing in another | It was added without `--scope user`, so it was saved only for that one folder | Run the connect command again from Step 11 or 12, with `--scope user` as written there. |
 | Not sure what belongs in `~/.zshrc.local` | It's easy to confuse with the managed `~/.zshrc` | See "Making it yours" below. |
 
 ## Making it yours: `~/.zshrc.local`
@@ -574,16 +725,21 @@ Start Claude Code from any terminal window by running:
 claude
 ```
 
-Once it's open, check that the services you connected in Steps 9 to 12
-are actually reachable:
+That uses your company's Claude Enterprise account. To use the company
+gateway instead, run `claude-gw` (and remember: never type `/logout`
+inside it).
+
+Once you're back at a normal terminal prompt, check that the services
+you connected in Steps 11 to 14 are actually reachable:
 
 ```bash
 claude mcp list
 ```
 
 **You should see:** each server you added (`linear-server`, `atlassian`,
-and so on) marked as connected. If one shows an error instead, re-run
-its "connect" step above.
+and so on) marked as connected. If one says it needs authentication,
+run `claude`, type `/mcp`, choose that server, and follow the browser
+sign-in. If one shows an error instead, re-run its "connect" step above.
 
 From there, just describe what you want in your own words, the way the
 examples at the top of this document did. If you get stuck on anything
