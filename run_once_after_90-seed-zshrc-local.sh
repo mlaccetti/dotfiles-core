@@ -1,7 +1,7 @@
 #!/bin/bash
 # Seeds ~/.zshrc.local from dot_zshrc_local.example the FIRST time this
 # runs on a machine - and never again. If ~/.zshrc.local already exists
-# (e.g. Michael's machine, where it's live and holds real overrides), it
+# (e.g. a machine where it is live and holds real overrides), it
 # is left completely untouched.
 set -uo pipefail
 

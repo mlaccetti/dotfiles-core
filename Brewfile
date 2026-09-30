@@ -58,13 +58,6 @@ brew "jq"
 brew "ripgrep"
 brew "gh"
 
-# ---- Netlify (where Claude will deploy small webapps it builds you) ----
-# Netlify's free tier explicitly allows the kind of "an employee builds
-# a small internal tool" use case this laptop is for. Its command line
-# tool lets Claude Code publish a site or app without you touching a
-# dashboard.
-brew "netlify-cli"
-
 # ---- GUI apps ----
 cask "iterm2"
 # MDM: many companies deploy 1Password (and require a specific SSO-linked

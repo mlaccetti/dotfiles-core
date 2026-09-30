@@ -17,17 +17,11 @@
 */}}
 {{- $name := promptString "Your full name (used for git commit authorship)" -}}
 {{- $email := promptString "Your email address (used for git commit authorship)" -}}
-{{- /* profile constrains all conditional content in this repo to one of two known values. */ -}}
-{{- $profile := promptString "Which profile is this? Type 'michael' for Michael's machine or 'shared' for anyone else (e.g. a spouse's laptop)" -}}
-{{- if and (ne $profile "michael") (ne $profile "shared") -}}
-  {{- fail (printf "profile must be 'michael' or 'shared', got %q - run 'chezmoi init' again" $profile) -}}
-{{- end -}}
 {{- /* Controls whether the [onepassword] section below is written at all. */ -}}
 {{- $use1password := promptBool "Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)" -}}
 [data]
     name = {{ $name | quote }}
     email = {{ $email | quote }}
-    profile = {{ $profile | quote }}
     use1password = {{ $use1password }}
 
 {{ if $use1password -}}

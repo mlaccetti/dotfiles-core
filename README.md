@@ -6,30 +6,23 @@ iTerm2, and Claude Code, all driven by one color palette.
 
 ## Who this is for
 
-Anyone setting up a Mac who wants this shell/terminal experience: Michael's
-own machines, and anyone else (e.g. a spouse's laptop, including a
-work/MDM-managed one) who wants the same baseline without any of Michael's
-employer-specific or personal-secret configuration. This repo is public
-and intentionally contains **zero** secrets, credentials, or
-employer-internal detail - anything like that lives in a machine-local
-`~/.zshrc.local` instead (never committed, never synced).
+Anyone setting up a Mac who wants this shell/terminal experience, including
+a work/MDM-managed one, without any employer-specific or personal-secret
+configuration. This repo is public and intentionally contains **zero**
+secrets, credentials, or employer-internal detail. Anything like that lives
+in a machine-local `~/.zshrc.local` instead (never committed, never synced).
 
-## The two-profile model
+## What setup asks
 
-`chezmoi init` asks a few plain-English questions, including which
-**profile** you are:
+`chezmoi init` asks three plain-English questions: your full name and your
+email address (both used for git commit authorship), and whether you use
+1Password and want this setup to read secrets from it.
 
-- **`michael`** - Michael's own machines. A couple of genuinely
-  shared-but-divergent things (like SDKMAN initialization) are gated on
-  this profile.
-- **`shared`** - anyone else. Gets the same core shell, prompt, theme, and
-  tooling, with nothing profile-specific turned on.
-
-Almost everything in this repo is identical for both profiles by design -
-profile conditionals are used sparingly, only where two setups genuinely
-need to diverge. Anything work-specific or personal is never in this repo
-at all; it belongs in your own `~/.zshrc.local` (see
-`dot_zshrc_local.example` for a starter template).
+Everything else is the same for every machine. Optional tools are detected
+rather than configured: for example, SDKMAN is initialized only if it is
+already installed. Anything work-specific or personal never goes in this
+repo; it belongs in your own `~/.zshrc.local` (see `dot_zshrc_local.example`
+for a starter template).
 
 ## Setup
 

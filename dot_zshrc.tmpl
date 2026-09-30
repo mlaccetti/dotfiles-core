@@ -169,13 +169,12 @@ unfunction _ngrok_completion_refresh
 # =============================================================================
 # Tool Initialization (must be at end)
 # =============================================================================
-{{- if eq .profile "michael" }}
 # SDKMAN - MUST BE AT THE END
-# Profile-gated: SDKMAN is a Michael-specific JVM toolchain manager, not
-# something every machine sharing this repo is expected to have.
-export SDKMAN_DIR="$HOME/.sdkman"
-[[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]] && source "$HOME/.sdkman/bin/sdkman-init.sh"
-{{- end }}
+# Only initialized when SDKMAN is installed; machines without it skip this.
+if [[ -s "$HOME/.sdkman/bin/sdkman-init.sh" ]]; then
+  export SDKMAN_DIR="$HOME/.sdkman"
+  source "$HOME/.sdkman/bin/sdkman-init.sh"
+fi
 
 # mise (Node.js/npm and other tools; see dot_config/mise/config.toml)
 if command -v mise >/dev/null 2>&1; then
