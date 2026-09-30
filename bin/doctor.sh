@@ -53,6 +53,7 @@ fail() {
 section() { printf "\n%s%s%s\n" "$C_BOLD" "$1" "$C_RESET"; }
 
 HOME_DIR="${HOME}"
+DOCTOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 SOURCE_DIR="${CHEZMOI_SOURCE_DIR:-}"
 if [ -z "$SOURCE_DIR" ] && command -v chezmoi >/dev/null 2>&1; then
   SOURCE_DIR="$(chezmoi source-path 2>/dev/null || true)"
@@ -175,94 +176,16 @@ brewfile_missing() {
 # unset in a bare ssh session, so fall back to its fixed default location.
 ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-${HOME_DIR}/.oh-my-zsh-custom}"
 
-# cask_outside_brew CASK: decide whether a cask brew does NOT manage is
-# nonetheless present on this machine. On success prints ONE line,
-# "<kind><TAB><description>", where kind is app | font | bin, and returns 0;
-# returns 1 (prints nothing) if it is genuinely absent or cannot be
-# determined. The ground truth is brew's own cask metadata
-# (`brew info --cask --json=v2`), which lists exactly the artifacts the cask
-# would install, so the check follows whatever the cask really ships instead
-# of a hand-kept name table:
-#   - app artifacts: the named .app bundle exists in /Applications or
-#     ~/Applications (installed by IT, drag-installed, or by the vendor's
-#     updater).
-#   - font artifacts: EVERY listed font file exists in ~/Library/Fonts or
-#     /Library/Fonts. All-or-nothing on purpose: a partial family is not
-#     "present", and brew installs fonts as plain files in ~/Library/Fonts,
-#     so file presence is the same thing brew itself would have produced.
-#   - binary artifacts (only for casks with no app or font, e.g.
-#     1password-cli): EVERY binary the cask declares must resolve to an
-#     absolute path on PATH. One stray match is not enough, and the
-#     description lists each resolved path so it is clear where the tool
-#     really came from. The claude-code casks are deliberately excluded: a
-#     stray `claude` on PATH must never hide a missing (or wrong-channel)
-#     claude-code cask.
-# Casks with no detectable artifact return 1 and stay "missing". Needs jq;
-# without it nothing is softened.
-cask_outside_brew() {
-  local cask="$1" info app font bin dir found resolved desc
-  local -a apps=() fonts=() bins=()
-  command -v jq >/dev/null 2>&1 || return 1
-  info="$(brew info --cask --json=v2 "$cask" 2>/dev/null)" || return 1
-  while IFS= read -r app; do
-    [ -n "$app" ] && apps+=("$app")
-  done < <(printf '%s' "$info" | jq -r '.casks[0].artifacts[]? | select(type == "object") | .app[]? | select(type == "string")' 2>/dev/null)
-  while IFS= read -r font; do
-    [ -n "$font" ] && fonts+=("$font")
-  done < <(printf '%s' "$info" | jq -r '.casks[0].artifacts[]? | select(type == "object") | .font[]? | select(type == "string")' 2>/dev/null)
-  while IFS= read -r bin; do
-    [ -n "$bin" ] && bins+=("$bin")
-  done < <(printf '%s' "$info" | jq -r '.casks[0].artifacts[]? | select(type == "object") | .binary[]? | select(type == "string")' 2>/dev/null)
-
-  if [ ${#apps[@]} -gt 0 ]; then
-    app="${apps[0]}"
-    for dir in "/Applications" "${HOME_DIR}/Applications"; do
-      if [ -d "${dir}/${app}" ]; then
-        printf 'app\t%s/%s\n' "$dir" "$app"
-        return 0
-      fi
-    done
-    return 1
-  fi
-
-  if [ ${#fonts[@]} -gt 0 ]; then
-    for font in "${fonts[@]}"; do
-      found=0
-      for dir in "${HOME_DIR}/Library/Fonts" "/Library/Fonts"; do
-        if [ -e "${dir}/${font}" ]; then
-          found=1
-          break
-        fi
-      done
-      [ "$found" -eq 1 ] || return 1
-    done
-    printf 'font\t%s font file(s) in Library/Fonts\n' "${#fonts[@]}"
-    return 0
-  fi
-
-  case "$cask" in
-    claude-code | claude-code@*) return 1 ;;
-  esac
-  if [ ${#bins[@]} -gt 0 ]; then
-    desc=""
-    for bin in "${bins[@]}"; do
-      resolved="$(command -v "${bin##*/}" 2>/dev/null)"
-      # Only an on-disk path counts; an alias or function name does not.
-      case "$resolved" in
-        /*) ;;
-        *) return 1 ;;
-      esac
-      desc="${desc:+${desc}, }${bin##*/} at ${resolved}"
-    done
-    printf 'bin\t%s\n' "$desc"
-    return 0
-  fi
-  return 1
-}
+# cask_outside_brew, claude_on_path and the other "is it already here?"
+# detection helpers live in bin/lib/cask-detect.sh, shared with
+# run_once_before_02-brew-bundle-core.sh so the bootstrap and this check
+# always agree on what counts as already installed.
+# shellcheck source=lib/cask-detect.sh
+. "${DOCTOR_DIR}/lib/cask-detect.sh"
 
 # check_brewfile FILE LABEL: per-item Brewfile check (see the section header).
 check_brewfile() {
-  local file="$1" label="$2" name where adopt found kind
+  local file="$1" label="$2" name where adopt found kind claude_path claude_cask
   local -a missing=() external=()
 
   if [ ! -f "$file" ]; then
@@ -289,6 +212,25 @@ check_brewfile() {
 
   while IFS= read -r name; do
     [ -z "$name" ] && continue
+    # Claude Code: a working `claude` from ANY install method (native
+    # installer, npm, the other Homebrew channel) is fine. Only "no claude
+    # anywhere on PATH" counts as missing. This is the same rule the
+    # bootstrap uses to avoid installing a second copy.
+    if is_claude_code_cask "$name" && claude_path="$(claude_on_path)"; then
+      if claude_cask="$(claude_caskroom_cask "$claude_path")"; then
+        if [ "$claude_cask" = "$name" ]; then
+          warn "Claude Code is present through Homebrew's '${claude_cask}' cask (at ${claude_path}), though brew doesn't list it as installed. That's fine." \
+            "It works as installed; nothing is wrong."
+        else
+          warn "Claude Code is installed through Homebrew as '${claude_cask}' instead of '${name}' (at ${claude_path}). That's fine." \
+            "It works as installed; nothing is wrong. Don't add a second copy: two casks fight over the 'claude' command."
+        fi
+      else
+        warn "Claude Code is installed outside Homebrew (at ${claude_path}). That's fine." \
+          "It works as installed; nothing is wrong. Don't install the '${name}' cask on top of it: two copies fight over the 'claude' command."
+      fi
+      continue
+    fi
     # Present on disk but not installed through brew (an app IT deployed, a
     # drag-installed app, fonts copied by hand): a WARN, not a missing
     # package.
@@ -326,6 +268,8 @@ check_brewfile() {
 
 if command -v brew >/dev/null 2>&1; then
   pass "Homebrew is installed ($(command -v brew))."
+  BREW_BIN="$(command -v brew)"
+  export BREW_BIN # read by bin/lib/cask-detect.sh
   check_brewfile "${SOURCE_DIR}/Brewfile" "core Brewfile"
 else
   fail "Homebrew is not installed." \

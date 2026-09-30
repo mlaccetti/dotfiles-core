@@ -150,6 +150,10 @@ be blocked or need approval on a locked-down fleet:
   conflict).
 - Installing the Slack cask (same reasoning: often already pushed by IT).
 
+Apps that are already on the Mac (iTerm2, 1Password, and so on) are
+detected and left alone rather than reinstalled, so an existing managed
+copy won't be touched.
+
 None of this stops the rest of the setup. The scripts are written to log
 a clear "needs IT approval" message for anything blocked and keep going,
 so you'll still end up with a working shell and terminal even if a few
@@ -283,7 +287,10 @@ means and what to type:
 
 **You should see:** after the four questions, a long stream of output:
 Homebrew installing/checking packages (this is the slowest part, several
-minutes), a check for `~/.oh-my-zsh` (safe to ignore on a brand-new
+minutes; if some of the apps are already on the Mac, it prints an
+"Already installed, leaving as is" line naming them and skips them, and
+it never installs a second Claude Code if a `claude` command already
+works), a check for `~/.oh-my-zsh` (safe to ignore on a brand-new
 machine), then chezmoi writing your dotfiles, then notes about the
 iTerm2 profile (and whether it could be set as iTerm2's default) and
 Claude Code theme being installed. It also installs Node.js (and its
