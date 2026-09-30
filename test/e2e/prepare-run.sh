@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# prepare-run.sh
+#
+# Runs INSIDE a fresh clone of her-sandbox-ready, before the guide starts.
+# provision-her-state.sh made the VM look like her Mac. This script makes the
+# run faithful rather than easy: it removes everything the Cirrus CI image
+# ships that would hide a missing-dependency bug, and gives her shell exactly
+# the startup files she has today.
+#
+#   1. brew update (Phoenix runs current Homebrew; the image's is old)
+#   2. uninstall the image's CI tooling (jq, gh, mise, node, ...), so that every
+#      tool she uses after setup was provided BY the setup
+#   3. ~/.zprofile = the Homebrew installer's line; ~/.zshrc = the native
+#      Claude installer's PATH line; nothing else
+#
+# Not idempotent by design: it runs once per throwaway clone.
+# No credentials are used.
+# shellcheck disable=SC2016
+# (SC2016: the quoted lines written to ~/.zprofile and ~/.zshrc must stay literal.)
+set -uo pipefail
+
+log()  { printf '\n==> %s\n' "$*"; }
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+removed() { printf 'REMOVED\t%s\t%s\n' "$1" "$2"; }
+
+BREW=/opt/homebrew/bin/brew
+[ -x "$BREW" ] || fail "no Homebrew at $BREW"
+eval "$("$BREW" shellenv)"
+
+# The image's ~/.zprofile exports HOMEBREW_NO_AUTO_UPDATE=1 and friends. Her
+# Mac does not, so make sure this process does not inherit them either.
+unset HOMEBREW_NO_AUTO_UPDATE HOMEBREW_NO_INSTALL_CLEANUP
+
+# ---------------------------------------------------------------- 1. brew update
+log "brew update"
+before="$("$BREW" --version | head -1)"
+"$BREW" update 2>&1 | tail -5
+after="$("$BREW" --version | head -1)"
+echo "HOMEBREW_BEFORE=${before}"
+echo "HOMEBREW_AFTER=${after}"
+
+# ---------------------------------------------------------------- 2. remove image CI tooling
+log "Removing image CI tooling that would mask missing-dependency bugs"
+
+# reason per formula. Everything here is either installed by the setup's
+# Brewfile, called by a run_once_/run_onchange_ script or by doctor.sh, or is a
+# Node/Ruby runtime the setup is supposed to provide through mise.
+remove_formula() {
+  local f="$1" why="$2"
+  if "$BREW" list --formula "$f" >/dev/null 2>&1; then
+    if "$BREW" uninstall --formula --ignore-dependencies --force "$f" >/dev/null 2>&1; then
+      removed "brew formula $f" "$why"
+    else
+      fail "could not uninstall formula $f"
+    fi
+  fi
+}
+remove_formula jq            "Brewfile formula; run_once_before_02, run_once_after_10/30 and doctor.sh call it"
+remove_formula gh            "Brewfile formula; doctor.sh and Step 8d use it"
+remove_formula yq            "same job as jq; hides a missing jq/yq dependency"
+remove_formula mise          "Brewfile formula; run_onchange_after_25 installs Node through it"
+remove_formula node          "must come from mise (Step 3), not the image"
+remove_formula node@24       "must come from mise (Step 3), not the image"
+remove_formula rbenv         "image Ruby version manager, competes with mise"
+remove_formula ruby-build    "rbenv plugin"
+remove_formula awscli        "image CI tool; oh-my-zsh aws plugin would find it"
+remove_formula git-lfs       "image CI tool; oh-my-zsh git-lfs plugin would find it"
+remove_formula chezmoi       "Brewfile formula; Step 2 must be what installs it"
+remove_formula fzf           "Brewfile formula"
+remove_formula bat           "Brewfile formula"
+remove_formula ripgrep       "Brewfile formula"
+remove_formula zsh-autosuggestions       "Brewfile formula"
+remove_formula zsh-syntax-highlighting   "Brewfile formula"
+remove_formula netlify-cli   "Brewfile formula; Step 8e checks it"
+remove_formula wget          "image CI tool"
+remove_formula gitlab-runner "image CI agent"
+remove_formula 'buildkite-agent@3' "image CI agent"
+remove_formula otel-cli      "image CI tool"
+remove_formula tart-guest-agent "image CI agent"
+remove_formula cmake         "image build tool"
+remove_formula gcc           "image build tool"
+
+# git-credential-manager rewrites ~/.gitconfig with a credential helper.
+if "$BREW" list --cask git-credential-manager >/dev/null 2>&1; then
+  if "$BREW" uninstall --cask --force git-credential-manager >/dev/null 2>&1; then
+    removed "brew cask git-credential-manager" "image tool; wrote credential helpers into ~/.gitconfig"
+  else
+    fail "could not uninstall cask git-credential-manager"
+  fi
+fi
+
+# Third-party taps the image added (buildkite, otel-cli, openai). Her Mac has none,
+# and Homebrew 7 prints a tap-trust warning on every command while they exist.
+for tap in $("$BREW" tap 2>/dev/null); do
+  if "$BREW" untap --force "$tap" >/dev/null 2>&1; then removed "brew tap $tap" "image CI tap; Homebrew 7 warns about untrusted taps on every command"; fi
+done
+
+# Non-brew copies. /usr/local/bin/op is the 1Password CLI she really has: keep.
+for f in /usr/local/bin/*; do
+  [ -e "$f" ] || continue
+  case "$(basename "$f")" in
+    op) ;;
+    git-credential-manager | git-credential-manager-core)
+      sudo rm -f "$f" && removed "$f" "leftover from the removed cask" ;;
+    jq | gh | yq | mise | node | npm | npx | rbenv | aws | git-lfs | chezmoi | fzf | bat | rg | netlify)
+      sudo rm -f "$f" && removed "$f" "non-brew copy of a tool the setup provides" ;;
+    *) echo "KEPT	$f	unrecognised, left alone" ;;
+  esac
+done
+for d in "$HOME/.rbenv" "$HOME/.local/share/mise" "$HOME/.config/mise" "$HOME/Library/pnpm" "$HOME/.nvm"; do
+  if [ -e "$d" ]; then rm -rf "$d" && removed "$d" "image runtime manager state"; fi
+done
+for f in "$HOME/.local/bin"/*; do
+  [ -e "$f" ] || continue
+  case "$(basename "$f")" in
+    claude) ;;
+    *) rm -f "$f" && removed "$f" "not part of her Mac" ;;
+  esac
+done
+if [ -f "$HOME/.profile" ]; then rm -f "$HOME/.profile" && removed "$HOME/.profile" "image PATH additions (node@24, pnpm)"; fi
+
+# The image's ~/.gitconfig has credential-manager and LFS filter sections and no
+# identity. She has no identity from the setup yet, so start from an empty file
+# (the git-identity script must be the thing that sets it).
+: >"$HOME/.gitconfig"
+removed "$HOME/.gitconfig contents" "credential-manager/LFS sections from the removed tools"
+
+# ---------------------------------------------------------------- 3. her shell startup files
+log "Shell startup files"
+# Exactly what the Homebrew installer tells you to add to ~/.zprofile.
+printf '%s\n' 'eval "$(/opt/homebrew/bin/brew shellenv)"' >"$HOME/.zprofile"
+# Exactly what the Claude Code native installer tells you to add.
+printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >"$HOME/.zshrc"
+echo "--- ~/.zprofile"; cat "$HOME/.zprofile"
+echo "--- ~/.zshrc";    cat "$HOME/.zshrc"
+
+# ---------------------------------------------------------------- verify
+log "Verify the starting state"
+errs=0
+say() { printf '%s\n' "$*"; }
+
+# Tools the setup must provide. In a login interactive zsh none may resolve.
+for t in jq gh yq mise node npm npx rbenv aws git-lfs chezmoi fzf bat rg netlify sf; do
+  where="$(zsh -lic "command -v $t" </dev/null 2>/dev/null | tail -1)"
+  # macOS itself ships /usr/bin/jq (since macOS 15), so that one is legitimate.
+  if [ "$t" = jq ] && [ "$where" = /usr/bin/jq ]; then
+    say "note: jq resolves to /usr/bin/jq, which macOS itself provides (her Mac has it too)"
+    continue
+  fi
+  if [ -n "$where" ]; then
+    say "FAIL: '$t' still resolves to $where"
+    errs=$((errs + 1))
+  fi
+done
+[ "$errs" -eq 0 ] && say "none of the tools the setup provides resolve before the run"
+
+resolved="$(zsh -lic 'command -v claude brew' </dev/null 2>/dev/null)"
+say "zsh -lic 'command -v claude brew':"
+say "$resolved"
+case "$resolved" in *"$HOME/.local/bin/claude"*) ;; *) say "FAIL: claude does not resolve"; errs=$((errs + 1)) ;; esac
+case "$resolved" in */opt/homebrew/bin/brew*) ;; *) say "FAIL: brew does not resolve"; errs=$((errs + 1)) ;; esac
+
+if pgrep -x iTerm2 >/dev/null 2>&1; then say "FAIL: iTerm2 is running"; errs=$((errs + 1)); fi
+if [ -n "$(git config --global --get user.name 2>/dev/null)" ]; then say "FAIL: git identity already set"; errs=$((errs + 1)); fi
+
+[ "$errs" -eq 0 ] || fail "$errs faithfulness check(s) failed"
+echo
+echo "prepare-run: OK"
