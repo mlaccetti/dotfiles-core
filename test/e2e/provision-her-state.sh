@@ -2,7 +2,7 @@
 # provision-her-state.sh
 #
 # Runs INSIDE the Tart VM (Cirrus Labs macOS base image, user "admin").
-# Brings the VM to the same state as her Mac before the setup guide runs:
+# Brings the VM to a Mac where the apps are already installed, before the setup guide runs:
 #   - Homebrew installed (comes with the Cirrus base image; verified here)
 #   - iTerm2, Visual Studio Code, 1Password, 1Password CLI (op) installed from
 #     vendor downloads, NOT via Homebrew (so `brew list --cask` must not show them)

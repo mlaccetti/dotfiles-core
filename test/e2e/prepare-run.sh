@@ -2,14 +2,14 @@
 # prepare-run.sh
 #
 # Runs INSIDE a fresh clone of her-sandbox-ready, before the guide starts.
-# provision-her-state.sh made the VM look like her Mac. This script makes the
+# provision-her-state.sh put the VM in the starting state (apps already installed). This script makes the
 # run faithful rather than easy: it removes everything the Cirrus CI image
-# ships that would hide a missing-dependency bug, and gives her shell exactly
-# the startup files she has today.
+# ships that would hide a missing-dependency bug, and gives the shell exactly
+# the startup files a typical Mac has.
 #
 #   1. brew update (Phoenix runs current Homebrew; the image's is old)
 #   2. uninstall the image's CI tooling (jq, gh, mise, node, ...), so that every
-#      tool she uses after setup was provided BY the setup
+#      tool used after setup was provided BY the setup
 #   3. ~/.zprofile = the Homebrew installer's line; ~/.zshrc = the native
 #      Claude installer's PATH line; nothing else
 #
@@ -27,7 +27,7 @@ BREW=/opt/homebrew/bin/brew
 [ -x "$BREW" ] || fail "no Homebrew at $BREW"
 eval "$("$BREW" shellenv)"
 
-# The image's ~/.zprofile exports HOMEBREW_NO_AUTO_UPDATE=1 and friends. Her
+# The image's ~/.zprofile exports HOMEBREW_NO_AUTO_UPDATE=1 and friends. A typical
 # Mac does not, so make sure this process does not inherit them either.
 unset HOMEBREW_NO_AUTO_UPDATE HOMEBREW_NO_INSTALL_CLEANUP
 
@@ -71,7 +71,6 @@ remove_formula bat           "Brewfile formula"
 remove_formula ripgrep       "Brewfile formula"
 remove_formula zsh-autosuggestions       "Brewfile formula"
 remove_formula zsh-syntax-highlighting   "Brewfile formula"
-remove_formula netlify-cli   "Brewfile formula; Step 8e checks it"
 remove_formula wget          "image CI tool"
 remove_formula gitlab-runner "image CI agent"
 remove_formula 'buildkite-agent@3' "image CI agent"
@@ -89,20 +88,20 @@ if "$BREW" list --cask git-credential-manager >/dev/null 2>&1; then
   fi
 fi
 
-# Third-party taps the image added (buildkite, otel-cli, openai). Her Mac has none,
+# Third-party taps the image added (buildkite, otel-cli, openai). A typical Mac has none,
 # and Homebrew 7 prints a tap-trust warning on every command while they exist.
 for tap in $("$BREW" tap 2>/dev/null); do
   if "$BREW" untap --force "$tap" >/dev/null 2>&1; then removed "brew tap $tap" "image CI tap; Homebrew 7 warns about untrusted taps on every command"; fi
 done
 
-# Non-brew copies. /usr/local/bin/op is the 1Password CLI she really has: keep.
+# Non-brew copies. /usr/local/bin/op is the vendor-installed 1Password CLI the scenario starts with: keep.
 for f in /usr/local/bin/*; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in
     op) ;;
     git-credential-manager | git-credential-manager-core)
       sudo rm -f "$f" && removed "$f" "leftover from the removed cask" ;;
-    jq | gh | yq | mise | node | npm | npx | rbenv | aws | git-lfs | chezmoi | fzf | bat | rg | netlify)
+    jq | gh | yq | mise | node | npm | npx | rbenv | aws | git-lfs | chezmoi | fzf | bat | rg)
       sudo rm -f "$f" && removed "$f" "non-brew copy of a tool the setup provides" ;;
     *) echo "KEPT	$f	unrecognised, left alone" ;;
   esac
@@ -114,18 +113,18 @@ for f in "$HOME/.local/bin"/*; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in
     claude) ;;
-    *) rm -f "$f" && removed "$f" "not part of her Mac" ;;
+    *) rm -f "$f" && removed "$f" "not part of a typical Mac" ;;
   esac
 done
 if [ -f "$HOME/.profile" ]; then rm -f "$HOME/.profile" && removed "$HOME/.profile" "image PATH additions (node@24, pnpm)"; fi
 
 # The image's ~/.gitconfig has credential-manager and LFS filter sections and no
-# identity. She has no identity from the setup yet, so start from an empty file
+# identity. There is no identity from the setup yet, so start from an empty file
 # (the git-identity script must be the thing that sets it).
 : >"$HOME/.gitconfig"
 removed "$HOME/.gitconfig contents" "credential-manager/LFS sections from the removed tools"
 
-# ---------------------------------------------------------------- 3. her shell startup files
+# ---------------------------------------------------------------- 3. shell startup files
 log "Shell startup files"
 # Exactly what the Homebrew installer tells you to add to ~/.zprofile.
 printf '%s\n' 'eval "$(/opt/homebrew/bin/brew shellenv)"' >"$HOME/.zprofile"
@@ -140,11 +139,11 @@ errs=0
 say() { printf '%s\n' "$*"; }
 
 # Tools the setup must provide. In a login interactive zsh none may resolve.
-for t in jq gh yq mise node npm npx rbenv aws git-lfs chezmoi fzf bat rg netlify sf; do
+for t in jq gh yq mise node npm npx rbenv aws git-lfs chezmoi fzf bat rg sf; do
   where="$(zsh -lic "command -v $t" </dev/null 2>/dev/null | tail -1)"
   # macOS itself ships /usr/bin/jq (since macOS 15), so that one is legitimate.
   if [ "$t" = jq ] && [ "$where" = /usr/bin/jq ]; then
-    say "note: jq resolves to /usr/bin/jq, which macOS itself provides (her Mac has it too)"
+    say "note: jq resolves to /usr/bin/jq, which macOS itself provides (every Mac has it)"
     continue
   fi
   if [ -n "$where" ]; then

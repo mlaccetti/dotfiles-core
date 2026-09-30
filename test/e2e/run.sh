@@ -2,7 +2,7 @@
 # test/e2e/run.sh
 #
 # End-to-end test of the setup guide, on your Mac (the host), in a fresh
-# throwaway macOS VM that looks like her Mac. One command:
+# throwaway macOS VM that looks like a Mac where the apps are already installed. One command:
 #
 #     test/e2e/run.sh
 #
@@ -18,7 +18,7 @@
 #   7. deletes the clone (unless --keep) and exits non-zero on any failure
 #
 # The guide runs the PUBLIC repo: `chezmoi init --apply
-# https://github.com/mlaccetti/dotfiles-core`, exactly as she will. So a fix
+# https://github.com/mlaccetti/dotfiles-core`, exactly as a reader will. So a fix
 # has to be merged to the default branch before this run can see it.
 #
 # No real credentials ever enter the VM. See README.md.

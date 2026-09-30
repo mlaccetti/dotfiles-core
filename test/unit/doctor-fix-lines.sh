@@ -2,7 +2,7 @@
 # Unit test for bin/doctor.sh "Fix:" lines.
 #
 # On a Mac that already has iTerm2, 1Password and Claude Code, a Fix line that
-# tells her to run `brew bundle --file=<whole Brewfile>` re-triggers "It seems
+# says to run `brew bundle --file=<whole Brewfile>` re-triggers "It seems
 # there is already an App at ..." errors. Fix lines must name only what is
 # missing: `brew install <formulae>` and `brew install --cask <casks>`.
 #
@@ -58,11 +58,11 @@ want   "missing rg is fixed with the ripgrep formula" "Fix:.*Run: brew install r
 want   "missing op is fixed with the 1password-cli cask" "Fix:.*Run: brew install --cask 1password-cli"
 want   "missing bat is fixed with brew install bat" "Fix:.*Run: brew install bat"
 want   "missing claude is fixed with the claude-code@latest cask" "Fix:.*Run: brew install --cask claude-code@latest$"
-refuse "no Fix line tells her to brew bundle the whole Brewfile" 'Fix:.*brew bundle'
+refuse "no Fix line says to brew bundle the whole Brewfile" 'Fix:.*brew bundle'
 refuse "no Fix line mentions brew bundle at all" 'brew bundle --file'
 
 # A Claude Code in the native install location that is not on PATH: say so,
-# and do not tell her to install a second copy.
+# and do not suggest installing a second copy.
 mkdir -p "$TMP/home/.local/bin"
 printf '#!/bin/sh\necho 0.0.0\n' >"$TMP/home/.local/bin/claude"
 chmod +x "$TMP/home/.local/bin/claude"

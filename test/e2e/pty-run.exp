@@ -1,7 +1,7 @@
 #!/usr/bin/expect -f
 # pty-run.exp TIMEOUT COMMAND [PROMPT ANSWER]...
 #
-# Runs COMMAND the way she would: typed into an interactive LOGIN zsh (what
+# Runs COMMAND the way a reader would: typed into an interactive LOGIN zsh (what
 # iTerm2 opens), on a real pty. PROMPT/ANSWER pairs are answered in order; the
 # PROMPT is matched as an exact substring, so the exact question text is part
 # of what is tested. Everything the command prints goes to stdout. Exit status

@@ -40,10 +40,23 @@ SKIPPED = {
     "claude": "interactive sign-in to a real Claude account (browser OAuth); the VM never logs in. "
               "Its version, gateway and MCP behavior are tested through other commands.",
     "gh auth login": "browser OAuth to GitHub; gh itself is verified with gh --version",
-    "netlify login": "browser OAuth to Netlify; netlify itself is verified with netlify --version",
     "sf org login web": "browser OAuth to Salesforce; sf itself is installed and verified with sf --version",
     "chsh -s /bin/zsh": "asks for the account password, and the default shell is already zsh in the VM",
 }
+
+# The Homebrew install path on the guide's Step 1: the installer, then the
+# shellenv block (one entry per line, because each line of a code block is
+# checked on its own).
+_HOMEBREW_FALLBACK = "fallback only, Homebrew already present in test image"
+for _line in (
+    '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"',
+    'if [ -d "/opt/homebrew" ]; then',
+    'eval "$(/opt/homebrew/bin/brew shellenv)"',
+    "else",
+    'eval "$(/usr/local/bin/brew shellenv)"',
+    "fi",
+):
+    SKIPPED[_line] = _HOMEBREW_FALLBACK
 
 
 class CodeBlocks(HTMLParser):

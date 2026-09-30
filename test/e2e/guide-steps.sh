@@ -2,8 +2,8 @@
 # guide-steps.sh
 #
 # Runs INSIDE the VM, after prepare-run.sh. Executes the setup guide's commands
-# in the guide's order, the way she would: typed into an interactive LOGIN zsh
-# (what iTerm2 opens) on a real pty, with the four chezmoi questions answered by
+# in the guide's order, the way a reader would: typed into an interactive LOGIN zsh
+# (what iTerm2 opens) on a real pty, with the three chezmoi questions answered by
 # `expect`. Around each step it checks the result the guide promises.
 #
 # Every command shown in guide/claude-workstation-setup.html must appear here as
@@ -16,7 +16,7 @@
 # a failed check is recorded and the run continues so one run shows every problem.
 # shellcheck disable=SC2015,SC2016,SC2010,SC2329,SC2018,SC2019,SC2088,SC2024
 # SC2015: `test && pass || bad` is deliberate, pass and bad both always succeed.
-# SC2016: the single-quoted strings are the commands typed into HER shell, so
+# SC2016: the single-quoted strings are the commands typed into the reader's shell, so
 #         they must not expand here.
 # SC2010: font names are only counted, so `ls | grep` is fine.
 # SC2329: cleanup is invoked by the EXIT trap.
@@ -32,11 +32,10 @@ mkdir -p "$OUT"
 : >"$OUT/results.tsv"
 : >"$OUT/covered.txt"
 
-# The four chezmoi questions, exactly as .chezmoi.toml.tmpl prints them. The
+# The three chezmoi questions, exactly as .chezmoi.toml.tmpl prints them. The
 # coverage checker verifies that each also appears in the guide.
 P_NAME='Your full name (used for git commit authorship)'
 P_EMAIL='Your email address (used for git commit authorship)'
-P_PROFILE="Which profile is this? Type 'michael' for Michael's machine or 'shared' for anyone else (e.g. a spouse's laptop)"
 P_1PASSWORD='Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)'
 # The four claude-gw-setup questions, from dot_local/bin/executable_claude-gw-setup.
 P_GWURL='Gateway address (starts with https://)'
@@ -102,7 +101,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Absolute paths for checks that run in this (bash) process, not in her shell.
+# Absolute paths for checks that run in this (bash) process, not in the reader's shell.
 ITERM_PROFILE="$HOME/Library/Application Support/iTerm2/DynamicProfiles/Anthropic.json"
 
 # ================================================================== 1
@@ -121,11 +120,11 @@ g_run s2-chezmoi 'brew install chezmoi'
 check 2 "chezmoi is on PATH in a new login shell" "$(/opt/homebrew/bin/chezmoi --version 2>/dev/null | head -1)" test -x /opt/homebrew/bin/chezmoi
 
 # ================================================================== 3
-section "Step 3: Run the main setup (four prompts answered by expect)"
+section "Step 3: Run the main setup (three prompts answered by expect)"
 g_pty s3-init 2400 'chezmoi init --apply https://github.com/mlaccetti/dotfiles-core' \
-  "$P_NAME" "$T_NAME" "$P_EMAIL" "$T_EMAIL" "$P_PROFILE" 'shared' "$P_1PASSWORD" 'false'
+  "$P_NAME" "$T_NAME" "$P_EMAIL" "$T_EMAIL" "$P_1PASSWORD" 'false'
 INIT="$PTY_TXT"
-[ "$PTY_RC" -eq 0 ] && pass 3 "chezmoi init --apply exits 0 and all four prompts matched" "exit 0" || bad 3 "chezmoi init --apply" "exit $PTY_RC"
+[ "$PTY_RC" -eq 0 ] && pass 3 "chezmoi init --apply exits 0 and all three prompts matched" "exit 0" || bad 3 "chezmoi init --apply" "exit $PTY_RC"
 
 alr="$(grep -m1 'Already installed, leaving as is:' "$INIT")"
 if [ -n "$alr" ]; then
@@ -156,10 +155,10 @@ dups="$(grep -E '^(==> )?Installing ' "$INIT" | sort | uniq -d)"
 
 fonts="$(ls "$HOME/Library/Fonts" 2>/dev/null | grep -ci 'FiraCode')"
 [ "${fonts:-0}" -gt 0 ] && pass 3 "Nerd Font installed" "$fonts FiraCode files in ~/Library/Fonts" || bad 3 "Nerd Font installed" "none in ~/Library/Fonts"
-for f in jq gh mise chezmoi fzf bat ripgrep netlify-cli zsh-autosuggestions zsh-syntax-highlighting; do
+for f in jq gh mise chezmoi fzf bat ripgrep zsh-autosuggestions zsh-syntax-highlighting; do
   printf '%s\n' "$formulae" | grep -qx -- "$f" || bad 3 "formula $f installed" "missing from brew list"
 done
-info 3 "Slack cask (Michael is keeping it; either outcome passes)" "$(if printf '%s\n' "$casks" | grep -qx slack; then echo 'installed by setup'; else echo 'not installed'; fi)"
+info 3 "Slack cask (either outcome passes)" "$(if printf '%s\n' "$casks" | grep -qx slack; then echo 'installed by setup'; else echo 'not installed'; fi)"
 
 # Node through mise (run_onchange_after_25).
 nodepath="$(zsh -lic 'command -v node' </dev/null 2>/dev/null | tail -1)"
@@ -395,12 +394,10 @@ if has 'linear-server' "$PTY_TXT" && has 'atlassian' "$PTY_TXT"; then
 else
   bad 7 "claude mcp list from a different folder shows both servers" "$(tail -4 "$PTY_TXT" | tr '\n' '|')"
 fi
-info 7 "OAuth sign-in (/mcp), gh auth login, netlify login, sf org login web skipped" "each needs a browser"
+info 7 "OAuth sign-in (/mcp), gh auth login, sf org login web skipped" "each needs a browser"
 
 pty s7-gh 60 'gh --version'
 [ "$PTY_RC" -eq 0 ] && pass 7 "gh --version" "$(head -1 "$PTY_TXT")" || bad 7 "gh --version" "exit $PTY_RC"
-pty s7-netlify 120 'netlify --version'
-[ "$PTY_RC" -eq 0 ] && pass 7 "netlify --version" "$(tail -1 "$PTY_TXT")" || bad 7 "netlify --version" "exit $PTY_RC"
 g_run s7-sf-install 'npm install -g @salesforce/cli'
 [ "$PTY_RC" -eq 0 ] && pass 7 "npm install -g @salesforce/cli (Node via mise works)" "exit 0" || bad 7 "npm install -g @salesforce/cli" "exit $PTY_RC: $(tail -3 "$PTY_TXT" | tr '\n' '|')"
 pty s7-sf-version 180 'sf --version'
@@ -413,8 +410,8 @@ DOC1="$PTY_TXT"
 [ "$PTY_RC" -eq 0 ] && pass 8 "doctor.sh exits 0" || bad 8 "doctor.sh exit status" "exit $PTY_RC"
 nfail="$(count '\[FAIL\]' "$DOC1")"; nwarn="$(count '\[WARN\]' "$DOC1")"; npass="$(count '\[PASS\]' "$DOC1")"
 [ "$nfail" -eq 0 ] && pass 8 "doctor.sh reports zero FAIL" "PASS=$npass WARN=$nwarn FAIL=$nfail" || bad 8 "doctor.sh reports FAIL lines" "$(grep -A1 '\[FAIL\]' "$DOC1" | head -8 | tr '\n' '|')"
-grep '\[WARN\]' "$DOC1" | while IFS= read -r l; do info 8 "doctor WARN (judge against her Mac)" "$l"; done
-# The guide (Step 9) tells her to expect exactly these WARNs: apps she already had,
+grep '\[WARN\]' "$DOC1" | while IFS= read -r l; do info 8 "doctor WARN (judge against the scenario)" "$l"; done
+# The guide (Step 9) tells you to expect exactly these WARNs: apps that were already installed,
 # reported as present but not managed by Homebrew. Anything else is a real finding.
 unexpected_warn="$(grep '\[WARN\]' "$DOC1" | grep -v -F \
   -e "'iterm2' is present but not brew-managed" \
@@ -422,7 +419,7 @@ unexpected_warn="$(grep '\[WARN\]' "$DOC1" | grep -v -F \
   -e "'1password-cli' is present but not brew-managed" \
   -e "'visual-studio-code' is present but not brew-managed" \
   -e "Claude Code is installed outside Homebrew" || true)"
-[ -z "$unexpected_warn" ] && pass 8 "every doctor WARN is one the guide tells her to expect" "$nwarn WARN, all for pre-installed apps" || bad 8 "doctor WARN the guide does not mention" "$(printf '%s' "$unexpected_warn" | head -5 | tr '\n' '|')"
+[ -z "$unexpected_warn" ] && pass 8 "every doctor WARN is one the guide tells you to expect" "$nwarn WARN, all for pre-installed apps" || bad 8 "doctor WARN the guide does not mention" "$(printf '%s' "$unexpected_warn" | head -5 | tr '\n' '|')"
 
 # ================================================================== glyph check
 section "Glyph check (files only; the visual part cannot be automated)"
@@ -434,8 +431,6 @@ if grep -q 'FiraCodeNFM-Reg' "$ITERM_PROFILE" 2>/dev/null; then pass 9 "Anthropi
 section "Troubleshooting commands from the guide (safe ones)"
 g_run t-mise-install 'mise install'
 [ "$PTY_RC" -eq 0 ] && pass 11 "mise install" "exit 0" || bad 11 "mise install" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
-g_run t-netlify-brew 'brew install netlify-cli'
-[ "$PTY_RC" -eq 0 ] && pass 11 "brew install netlify-cli (already installed)" "exit 0" || bad 11 "brew install netlify-cli" "exit $PTY_RC"
 g_run t-font-brew 'brew install --cask font-fira-code-nerd-font'
 [ "$PTY_RC" -eq 0 ] && pass 11 "brew install --cask font-fira-code-nerd-font (already installed)" "exit 0" || bad 11 "brew install --cask font-fira-code-nerd-font" "exit $PTY_RC"
 g_run t-profile-cp 'mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles" && cp "$(chezmoi source-path)/iterm2/Anthropic.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Anthropic.json"'
