@@ -1,0 +1,4 @@
+# Let shellcheck follow `source` directives relative to each script, so
+# `shellcheck bin/doctor.sh` also checks the shared bin/lib helpers it sources.
+external-sources=true
+source-path=SCRIPTDIR
