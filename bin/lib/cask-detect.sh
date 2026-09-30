@@ -36,7 +36,7 @@
 #     absolute path on PATH. One stray match is not enough, and the
 #     description lists each resolved path so it is clear where the tool
 #     really came from. The claude-code casks are deliberately excluded
-#     here: they are handled by claude_on_path below, which answers a
+#     here: they are handled by claude_present below, which answers a
 #     different question ("is ANY claude present?").
 # Casks with no detectable artifact return 1 and stay "missing". Needs jq;
 # without it nothing is softened. If `brew info` fails, returns 1: the
@@ -125,9 +125,9 @@ is_claude_code_cask() {
 
 # claude_on_path: if ANY `claude` resolves to an on-disk path on PATH
 # (native installer, npm, a Homebrew cask, anything), print that path and
-# return 0. Returns 1 (prints nothing) if none does. The source of the
-# install does not matter: the goal is never to lay a second Claude Code on
-# top of a working one. An alias or function name does not count.
+# return 0. Returns 1 (prints nothing) if none does. An alias or function
+# name does not count. This answers "does typing `claude` work RIGHT NOW?";
+# for "is Claude Code on this machine at all?" use claude_present below.
 claude_on_path() {
   local resolved
   resolved="$(command -v claude 2>/dev/null)" || return 1
@@ -138,6 +138,32 @@ claude_on_path() {
       ;;
   esac
   return 1
+}
+
+# claude_native_install: if Claude Code's native installer has put a `claude`
+# in one of its two documented locations (~/.local/bin/claude, or
+# ~/.claude/local/claude for the older "local" install), print that path and
+# return 0, whether or not its folder is on PATH. Returns 1 otherwise. The
+# native installer only *suggests* adding ~/.local/bin to PATH, so a working
+# install can be invisible to a non-login shell, an ssh command or a script.
+claude_native_install() {
+  local home_dir="${HOME_DIR:-$HOME}" candidate
+  for candidate in "${home_dir}/.local/bin/claude" "${home_dir}/.claude/local/claude"; do
+    if [ -x "$candidate" ] && [ ! -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# claude_present: is ANY Claude Code on this machine? Prints where and returns
+# 0 if `claude` is on PATH (any install method) or sits in a documented native
+# install location. The bootstrap uses this so it never lays a second Claude
+# Code on top of a working one, even when the first is not on PATH yet.
+claude_present() {
+  claude_on_path && return 0
+  claude_native_install
 }
 
 # resolve_symlinks PATH: print PATH with every symlink in the final component

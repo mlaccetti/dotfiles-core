@@ -111,8 +111,9 @@ filter_brewfile() {
 cask_already_present() {
   local cask="$1"
   if is_claude_code_cask "$cask"; then
-    # ANY `claude` on PATH, whatever its source: never install a second one.
-    claude_on_path >/dev/null
+    # ANY Claude Code, whatever its source (on PATH, or in a documented native
+    # install location that is not on PATH yet): never install a second one.
+    claude_present >/dev/null
     return $?
   fi
   cask_outside_brew "$cask" >/dev/null

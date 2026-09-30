@@ -176,7 +176,7 @@ brewfile_missing() {
 # unset in a bare ssh session, so fall back to its fixed default location.
 ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-${HOME_DIR}/.oh-my-zsh-custom}"
 
-# cask_outside_brew, claude_on_path and the other "is it already here?"
+# cask_outside_brew, claude_present and the other "is it already here?"
 # detection helpers live in bin/lib/cask-detect.sh, shared with
 # run_once_before_02-brew-bundle-core.sh so the bootstrap and this check
 # always agree on what counts as already installed.
@@ -186,7 +186,7 @@ ZSH_CUSTOM_DIR="${ZSH_CUSTOM:-${HOME_DIR}/.oh-my-zsh-custom}"
 # check_brewfile FILE LABEL: per-item Brewfile check (see the section header).
 check_brewfile() {
   local file="$1" label="$2" name where adopt found kind claude_path claude_cask
-  local -a missing=() external=()
+  local -a missing=() missing_formulae=() missing_casks=() external=()
 
   if [ ! -f "$file" ]; then
     warn "Could not find ${label} at ${file} to check against."
@@ -208,6 +208,7 @@ check_brewfile() {
       continue
     fi
     missing+=("$name")
+    missing_formulae+=("$name")
   done < <(brewfile_missing "$file" formula)
 
   while IFS= read -r name; do
@@ -216,7 +217,7 @@ check_brewfile() {
     # installer, npm, the other Homebrew channel) is fine. Only "no claude
     # anywhere on PATH" counts as missing. This is the same rule the
     # bootstrap uses to avoid installing a second copy.
-    if is_claude_code_cask "$name" && claude_path="$(claude_on_path)"; then
+    if is_claude_code_cask "$name" && claude_path="$(claude_present)"; then
       if claude_cask="$(claude_caskroom_cask "$claude_path")"; then
         if [ "$claude_cask" = "$name" ]; then
           warn "Claude Code is present through Homebrew's '${claude_cask}' cask (at ${claude_path}), though brew doesn't list it as installed. That's fine." \
@@ -252,6 +253,7 @@ check_brewfile() {
       continue
     fi
     missing+=("$name")
+    missing_casks+=("$name")
   done < <(brewfile_missing "$file" cask)
 
   if [ ${#external[@]} -gt 0 ]; then
@@ -261,8 +263,19 @@ check_brewfile() {
   if [ ${#missing[@]} -eq 0 ]; then
     pass "All ${label} packages are installed or otherwise present."
   else
+    # Suggest installing just what is missing. `brew bundle` over the whole
+    # Brewfile would try every cask again, and on a Mac that already has the
+    # apps it fails with "It seems there is already an App at ...".
+    local fix="" sep=""
+    if [ ${#missing_formulae[@]} -gt 0 ]; then
+      fix="brew install ${missing_formulae[*]}"
+      sep=", then run: "
+    fi
+    if [ ${#missing_casks[@]} -gt 0 ]; then
+      fix="${fix}${sep}brew install --cask ${missing_casks[*]}"
+    fi
     fail "${label} is missing: ${missing[*]}." \
-      "Run: brew bundle --file=\"${file}\""
+      "Run: ${fix}"
   fi
 }
 
@@ -338,13 +351,18 @@ done
 # =============================================================================
 section "Fonts"
 # =============================================================================
+# Output is captured first and matched second. `cmd | grep -q` is wrong under
+# `set -o pipefail`: grep exits at the first match, the writer (fc-list,
+# system_profiler, find) gets SIGPIPE, and the pipeline reports failure even
+# though the font IS there. fc-list exists whenever fontconfig does (netlify-cli
+# pulls it in), so this used to report a false FAIL right after a good install.
 FONT_FOUND=0
-if command -v fc-list >/dev/null 2>&1; then
-  if fc-list 2>/dev/null | grep -qi "FiraCode Nerd Font"; then
-    FONT_FOUND=1
-  fi
-elif [ -d "${HOME_DIR}/Library/Fonts" ]; then
-  if find "${HOME_DIR}/Library/Fonts" /Library/Fonts -iname "*FiraCode*Nerd*" 2>/dev/null | grep -q .; then
+FONT_FILES="$(find "${HOME_DIR}/Library/Fonts" /Library/Fonts -iname "*FiraCode*Nerd*" 2>/dev/null)"
+if [ -n "$FONT_FILES" ]; then
+  FONT_FOUND=1
+elif command -v fc-list >/dev/null 2>&1; then
+  FC_LIST_OUT="$(fc-list 2>/dev/null)"
+  if grep -qi "FiraCode Nerd Font" <<<"$FC_LIST_OUT"; then
     FONT_FOUND=1
   fi
 fi
@@ -363,7 +381,8 @@ fi
 PS_NAME="FiraCodeNFM-Reg"
 PS_FOUND=0
 if command -v system_profiler >/dev/null 2>&1; then
-  if system_profiler SPFontsDataType 2>/dev/null | grep -qi "$PS_NAME"; then
+  SP_FONTS_OUT="$(system_profiler SPFontsDataType 2>/dev/null)"
+  if grep -qi "$PS_NAME" <<<"$SP_FONTS_OUT"; then
     PS_FOUND=1
   fi
 fi
@@ -475,7 +494,7 @@ else
       "Confirm dot_oh-my-zsh-custom/theme-colors.zsh exists and \$ZSH_CUSTOM/theme-colors.zsh is being auto-sourced by oh-my-zsh."
   fi
 
-  if printf '%s\n' "$ZSH_HIGHLIGHTERS" | grep -qiw "brackets"; then
+  if grep -qiw "brackets" <<<"$ZSH_HIGHLIGHTERS"; then
     pass "\$ZSH_HIGHLIGHT_HIGHLIGHTERS includes 'brackets' in a fresh shell."
   else
     fail "\$ZSH_HIGHLIGHT_HIGHLIGHTERS does not include 'brackets' in a fresh shell." \
@@ -534,7 +553,7 @@ if command -v mise >/dev/null 2>&1; then
     RESOLVED="$(printf '%s\n' "$MISE_QUERY" | sed -n "${line_num}p")"
     if [ -z "$RESOLVED" ]; then
       warn "'${tool}' does not resolve to anything on PATH (may not be installed)."
-    elif printf '%s' "$RESOLVED" | grep -q "/mise/shims/"; then
+    elif grep -q "/mise/shims/" <<<"$RESOLVED"; then
       fail "'${tool}' resolves to a mise shim (${RESOLVED}), not Homebrew." \
         "Check PATH ordering: mise's shims dir should come AFTER Homebrew's bin dirs. See the comment in dot_zshrc.tmpl above the 'path=' lines."
     else
@@ -556,11 +575,26 @@ section "Required CLIs"
 # are also in the Brewfile but are zsh plugins sourced by the shell, not
 # binaries on PATH, so they don't belong here. If the Brewfile changes,
 # update this list to match.
+# cli_fix CLI: the command that installs just that tool (never the whole
+# Brewfile: on a Mac that already has the apps, `brew bundle` errors with
+# "It seems there is already an App at ...").
+cli_fix() {
+  case "$1" in
+    rg) echo "brew install ripgrep" ;;
+    op) echo "brew install --cask 1password-cli" ;;
+    claude) echo "brew install --cask claude-code@latest" ;;
+    *) echo "brew install $1" ;;
+  esac
+}
+
 for cli in bat fzf gh jq rg mise op claude; do
   if command -v "$cli" >/dev/null 2>&1; then
     pass "'${cli}' is installed."
+  elif [ "$cli" = "claude" ] && claude_native="$(claude_native_install)"; then
+    fail "'claude' is installed at ${claude_native} but its folder is not on your PATH." \
+      "Add it to PATH: echo 'export PATH=\"$(dirname "$claude_native"):\$PATH\"' >> ~/.zshrc.local, then open a new terminal window."
   else
-    fail "'${cli}' is not installed." "Run: brew bundle --file=\"${SOURCE_DIR}/Brewfile\" (or brew install ${cli})"
+    fail "'${cli}' is not installed." "Run: $(cli_fix "$cli")"
   fi
 done
 
@@ -573,7 +607,7 @@ for cli in node npm; do
   if command -v "$cli" >/dev/null 2>&1; then
     pass "'${cli}' is installed."
   else
-    fail "'${cli}' is not installed." "Run: mise install (installs Node.js and npm from ~/.config/mise/config.toml). If mise itself is missing, run brew bundle --file=\"${SOURCE_DIR}/Brewfile\" first, then open a new terminal window."
+    fail "'${cli}' is not installed." "Run: mise install (installs Node.js and npm from ~/.config/mise/config.toml). If mise itself is missing, run brew install mise first, then open a new terminal window."
   fi
 done
 
