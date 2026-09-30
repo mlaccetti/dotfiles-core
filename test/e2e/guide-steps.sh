@@ -159,7 +159,7 @@ fonts="$(ls "$HOME/Library/Fonts" 2>/dev/null | grep -ci 'FiraCode')"
 for f in jq gh mise chezmoi fzf bat ripgrep netlify-cli zsh-autosuggestions zsh-syntax-highlighting; do
   printf '%s\n' "$formulae" | grep -qx -- "$f" || bad 3 "formula $f installed" "missing from brew list"
 done
-info 3 "Slack cask (Michael has not decided on it)" "$(if printf '%s\n' "$casks" | grep -qx slack; then echo 'installed by setup'; else echo 'not installed'; fi)"
+info 3 "Slack cask (Michael is keeping it; either outcome passes)" "$(if printf '%s\n' "$casks" | grep -qx slack; then echo 'installed by setup'; else echo 'not installed'; fi)"
 
 # Node through mise (run_onchange_after_25).
 nodepath="$(zsh -lic 'command -v node' </dev/null 2>/dev/null | tail -1)"
@@ -414,6 +414,15 @@ DOC1="$PTY_TXT"
 nfail="$(count '\[FAIL\]' "$DOC1")"; nwarn="$(count '\[WARN\]' "$DOC1")"; npass="$(count '\[PASS\]' "$DOC1")"
 [ "$nfail" -eq 0 ] && pass 8 "doctor.sh reports zero FAIL" "PASS=$npass WARN=$nwarn FAIL=$nfail" || bad 8 "doctor.sh reports FAIL lines" "$(grep -A1 '\[FAIL\]' "$DOC1" | head -8 | tr '\n' '|')"
 grep '\[WARN\]' "$DOC1" | while IFS= read -r l; do info 8 "doctor WARN (judge against her Mac)" "$l"; done
+# The guide (Step 9) tells her to expect exactly these WARNs: apps she already had,
+# reported as present but not managed by Homebrew. Anything else is a real finding.
+unexpected_warn="$(grep '\[WARN\]' "$DOC1" | grep -v -F \
+  -e "'iterm2' is present but not brew-managed" \
+  -e "'1password' is present but not brew-managed" \
+  -e "'1password-cli' is present but not brew-managed" \
+  -e "'visual-studio-code' is present but not brew-managed" \
+  -e "Claude Code is installed outside Homebrew" || true)"
+[ -z "$unexpected_warn" ] && pass 8 "every doctor WARN is one the guide tells her to expect" "$nwarn WARN, all for pre-installed apps" || bad 8 "doctor WARN the guide does not mention" "$(printf '%s' "$unexpected_warn" | head -5 | tr '\n' '|')"
 
 # ================================================================== glyph check
 section "Glyph check (files only; the visual part cannot be automated)"

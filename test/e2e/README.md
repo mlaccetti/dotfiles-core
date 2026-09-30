@@ -59,11 +59,15 @@ https://github.com/cirruslabs/tart before you use it commercially.
    the prompt texts the test types are the ones on the guide and in the repo.
    It then runs the fast unit tests in `test/unit` (Claude detection and the
    doctor's Fix lines), which need no VM.
-2. **`her-sandbox-ready`, built once.** If it does not exist, `run.sh` pulls the
-   Cirrus `macos-tahoe-base` image, boots it, runs `provision-her-state.sh`
-   (iTerm2, VS Code, 1Password and `op` from vendor downloads, Claude Code from
-   the native installer, no Nerd Font, none of them managed by Homebrew), and
-   snapshots it. This takes 35 to 40 minutes. `--rebuild` does it again.
+2. **`her-sandbox-ready`, built once.** If it does not exist, `run.sh` clones
+   `her-sandbox-base` (the untouched Cirrus `macos-tahoe-base` image, pulled on
+   first use) to a throwaway `her-sandbox-build-<timestamp>`, boots that, runs
+   `provision-her-state.sh` (iTerm2, VS Code, 1Password and `op` from vendor
+   downloads, Claude Code from the native installer, no Nerd Font, none of them
+   managed by Homebrew), and renames it to `her-sandbox-ready`. The base is never
+   provisioned, so `--rebuild` always proves the script from the vendor image.
+   Provisioning takes about 3 minutes once the base image is on disk (the first
+   image pull is about 33 GB and is the slow part). `--rebuild` does it again.
 3. **A fresh clone, `e2e-<timestamp>`,** is booted headless. It is deleted at the
    end (unless `--keep`). The snapshot is never modified.
 4. **`prepare-run.sh` makes the run faithful, not easy.** It updates Homebrew,
@@ -79,7 +83,7 @@ https://github.com/cirruslabs/tart before you use it commercially.
    `test@example.com`, profile `shared`, 1Password `false`), the shell restart,
    `claude --version`, the gateway against a local stub, the MCP connections at
    user scope, the binaries (`gh`, `netlify`, `sf`), `doctor.sh` (must exit 0 with
-   no FAIL), the font and profile files, the troubleshooting commands, and a second
+   no FAIL, and every WARN must be one of the five the guide tells her to expect), the font and profile files, the troubleshooting commands, and a second
    `chezmoi apply` plus `doctor.sh` to prove nothing changes.
 6. **The report** is copied to `test/e2e/reports/<timestamp>/` (git-ignored):
    `prepare-run.log`, `guide-steps.log`, `coverage.txt` (each guide command as
