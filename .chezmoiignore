@@ -8,3 +8,7 @@ Brewfile
 bin/
 iterm2/
 dot_zshrc_local.example
+# The guide's source and the test harness belong to the repo, never to anyone's
+# home directory.
+test/
+guide/
