@@ -1,0 +1,47 @@
+#!/usr/bin/expect -f
+# pty-session.exp TIMEOUT LINE...
+#
+# Opens an interactive login zsh on a pty (a new iTerm2 tab) and types each
+# LINE into it, like she would. A LINE that starts with "!" is typed as is and
+# followed by a short wait for the shell to settle (use it for `exec zsh -l`,
+# which replaces the shell). Any other LINE is followed by a sentinel; the
+# command's exit status is printed as "RC(<n>)=<status>" after it finishes.
+set T [lindex $argv 0]
+set timeout $T
+set lines [lrange $argv 1 end]
+set env(TERM) xterm-256color
+set stty_init "columns 300 rows 50"
+log_user 1
+
+proc settle {secs} {
+  global timeout T
+  set timeout $secs
+  expect {
+    -re {.+} { exp_continue }
+    timeout {}
+    eof { puts "\nPTYSESSION: shell exited unexpectedly"; exit 125 }
+  }
+  set timeout $T
+}
+
+spawn -noecho /bin/zsh -l -i
+settle 5
+set n 0
+foreach l $lines {
+  incr n
+  if {[string index $l 0] eq "!"} {
+    send -- "[string range $l 1 end]\r"
+    settle 8
+    continue
+  }
+  send -- "$l; echo __RC_\$?__\r"
+  expect {
+    -re {__RC_([0-9]+)__} { puts "\nRC($n)=$expect_out(1,string)" }
+    timeout { puts "\nPTYSESSION: timed out on line $n: $l"; catch {close}; catch {wait}; exit 124 }
+    eof { puts "\nPTYSESSION: shell exited on line $n"; exit 125 }
+  }
+}
+send -- "exit\r"
+expect eof
+catch wait result
+exit 0

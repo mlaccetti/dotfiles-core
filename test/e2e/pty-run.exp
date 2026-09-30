@@ -1,0 +1,37 @@
+#!/usr/bin/expect -f
+# pty-run.exp TIMEOUT COMMAND [PROMPT ANSWER]...
+#
+# Runs COMMAND the way she would: typed into an interactive LOGIN zsh (what
+# iTerm2 opens), on a real pty. PROMPT/ANSWER pairs are answered in order; the
+# PROMPT is matched as an exact substring, so the exact question text is part
+# of what is tested. Everything the command prints goes to stdout. Exit status
+# is the command's own; 124 = timed out, 125 = ended before a prompt appeared.
+set timeout [lindex $argv 0]
+set cmd [lindex $argv 1]
+set pairs [lrange $argv 2 end]
+set env(TERM) xterm-256color
+# Wide pty so long prompts are not soft-wrapped in the output stream.
+set stty_init "columns 300 rows 50"
+log_user 1
+spawn -noecho /bin/zsh -l -i -c $cmd
+foreach {prompt answer} $pairs {
+  expect {
+    -ex $prompt {
+      # Give a full-screen prompt (chezmoi's) time to switch the tty to raw mode,
+      # or the typed text is discarded. Then type the answer and press Return
+      # separately, so the prompt does not mistake the whole burst for a paste.
+      sleep 0.7
+      send -- $answer
+      sleep 0.4
+      send -- "\r"
+    }
+    timeout { puts "\nPTYRUN: timed out waiting for prompt: $prompt"; catch {close}; catch {wait}; exit 124 }
+    eof { puts "\nPTYRUN: command ended before prompt: $prompt"; catch {wait}; exit 125 }
+  }
+}
+expect {
+  timeout { puts "\nPTYRUN: timed out waiting for the command to finish"; catch {close}; catch {wait}; exit 124 }
+  eof {}
+}
+catch wait result
+exit [lindex $result 3]

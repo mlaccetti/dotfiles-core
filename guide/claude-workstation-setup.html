@@ -1,0 +1,930 @@
+<title>Claude Workstation Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Hanken+Grotesk:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: a slim progress bar on top, a sticky step index on the left at desktop width, one readable column of steps on the right. Command blocks copy the look of the terminal she is setting up. */
+:root {
+  /* type */
+  --font-body: "Hanken Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "Fira Code", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* page palette: cool blue-slate neutrals, one teal accent */
+  --bg: #edf1f5;
+  --surface: #ffffff;
+  --surface-2: #e4eaf0;
+  --fg: #16202b;
+  --muted: #526071;
+  --line: #d2dae3;
+  --accent: #1c6d7a;
+  --on-accent: #ffffff;
+  --accent-soft: #d8ecef;
+  --ok: #2a7748;
+  --warn: #8a5800;
+  --bad: #b03427;
+
+  /* terminal palette: the Anthropic profile, dark in both page themes */
+  --term-bg: #141413;
+  --term-fg: #faf9f5;
+  --term-dim: #a9a79d;
+  --term-line: #34322d;
+  --term-accent: #d97757;
+  --term-blue: #6a9bcc;
+  --term-green: #788c5d;
+  --term-btn: #262522;
+  --term-btn-fg: #faf9f5;
+
+  --radius: 6px;
+  --gutter: clamp(16px, 4vw, 32px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e151c; --surface: #151f29; --surface-2: #1c2935; --fg: #e3eaf1; --muted: #93a3b4;
+    --line: #2a3846; --accent: #6cc2ce; --on-accent: #07262b; --accent-soft: #143840;
+    --ok: #7cc698; --warn: #e2b65c; --bad: #f28c80;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e151c; --surface: #151f29; --surface-2: #1c2935; --fg: #e3eaf1; --muted: #93a3b4;
+  --line: #2a3846; --accent: #6cc2ce; --on-accent: #07262b; --accent-soft: #143840;
+  --ok: #7cc698; --warn: #e2b65c; --bad: #f28c80;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 4.5rem; }
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
+  padding-inline: var(--gutter);
+  padding-block: 0 4rem;
+  -webkit-text-size-adjust: 100%;
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  * { transition: none !important; animation: none !important; }
+}
+a { color: var(--accent); text-underline-offset: 0.18em; }
+a:focus-visible, button:focus-visible, input:focus-visible + .tick-box, summary:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px;
+}
+h1, h2, h3, h4 { text-wrap: balance; line-height: 1.2; margin: 0; }
+p { margin: 0; }
+code.i, .inline {
+  font-family: var(--font-mono); font-size: 0.86em; background: var(--surface-2);
+  padding: 0.08em 0.38em; border-radius: 4px; overflow-wrap: anywhere;
+}
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.icon { width: 1em; height: 1em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* progress bar */
+.topbar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  margin-inline: calc(var(--gutter) * -1);
+  padding: 0.55rem var(--gutter);
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-in { max-width: 1120px; margin-inline: auto; display: flex; align-items: center; gap: 0.9rem; }
+.topbar b { font-weight: 700; font-size: 0.9rem; white-space: nowrap; }
+.meter { flex: 1; height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; min-width: 40px; }
+.meter i { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.25s; }
+.count { font-size: 0.85rem; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+.page { max-width: 1120px; margin-inline: auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 2rem; padding-top: 2rem; }
+@media (min-width: 960px) { .page { grid-template-columns: 210px minmax(0, 1fr); gap: 3rem; } }
+.main { min-width: 0; display: flex; flex-direction: column; gap: 3.5rem; max-width: 760px; }
+
+/* step index */
+.index { display: none; }
+@media (min-width: 960px) {
+  .index { display: block; position: sticky; top: 4.5rem; align-self: start; font-size: 0.9rem; }
+}
+.index h2 { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); font-weight: 600; margin-bottom: 0.6rem; }
+.index ol, .index ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.index a { display: flex; align-items: baseline; gap: 0.6rem; padding: 0.28rem 0; color: var(--fg); text-decoration: none; }
+.index a:hover span.t { text-decoration: underline; }
+.index .n { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); width: 1.4rem; flex: none; }
+.index .dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; border: 1.5px solid var(--muted); flex: none; align-self: center; margin-left: auto; }
+.index a.done .dot { background: var(--ok); border-color: var(--ok); }
+.index a.done .t { color: var(--muted); }
+.index hr { border: 0; border-top: 1px solid var(--line); margin: 0.7rem 0; }
+
+/* header */
+.intro { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1.6rem; }
+.eyebrow { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 700; }
+h1 { font-size: clamp(1.9rem, 4.5vw, 2.6rem); font-weight: 700; letter-spacing: -0.02em; margin-top: 0.4rem; }
+.lead { font-size: 1.1rem; margin-top: 0.9rem; max-width: 62ch; }
+.meta { margin-top: 0.8rem; color: var(--muted); font-size: 0.95rem; max-width: 62ch; }
+
+/* terminal treatment: only command blocks and the prompt preview */
+.term {
+  background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); font-size: 0.86rem; line-height: 1.6;
+  border: 1px solid var(--term-line); border-radius: var(--radius);
+}
+.preview { padding: 0.9rem 1rem; overflow-x: auto; }
+.preview pre { margin: 0; font: inherit; white-space: pre; }
+.preview .cap { font-family: var(--font-body); font-size: 0.78rem; color: var(--term-dim); margin-bottom: 0.5rem; display: block; }
+.c-dim { color: var(--term-dim); } .c-acc { color: var(--term-accent); } .c-blue { color: var(--term-blue); } .c-green { color: var(--term-green); }
+.cursor { display: inline-block; width: 0.6em; height: 1.1em; background: var(--term-accent); vertical-align: text-bottom; margin-left: 0.25em; }
+
+.cmd { position: relative; margin-block: 0.25rem; }
+.cmd pre { margin: 0; padding: 0.85rem 5.6rem 0.85rem 1rem; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+.cmd pre::before { content: "\276F\00a0"; color: var(--term-accent); }
+.cmd .copy {
+  position: absolute; top: 0.5rem; right: 0.5rem; min-height: 2rem; padding: 0 0.7rem;
+  background: var(--term-btn); color: var(--term-btn-fg); border: 1px solid var(--term-line); border-radius: 4px;
+  font: 600 0.78rem var(--font-body); cursor: pointer;
+}
+.cmd .copy:hover { border-color: var(--term-blue); }
+.cmd .copy:focus-visible { outline-color: var(--term-blue); }
+.oc .cmd { margin-block: 0.5rem; }
+.cmd-label { font-size: 0.82rem; color: var(--muted); margin-top: 0.4rem; }
+
+/* sections */
+.sec > h2 { font-size: 1.5rem; letter-spacing: -0.01em; }
+.sec > .sub { color: var(--muted); margin-top: 0.4rem; max-width: 62ch; }
+.stack { display: flex; flex-direction: column; gap: 1rem; margin-top: 1.4rem; }
+
+.examples { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 0.8rem; margin: 0; padding: 0; list-style: none; }
+.examples li { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.85rem 1rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.examples .tag { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.examples q { quotes: "\201C" "\201D"; font-size: 0.98rem; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.2rem; }
+.panel h3 { font-size: 1.05rem; margin-bottom: 0.6rem; }
+.panel ul, .panel ol { margin: 0.4rem 0 0; padding-left: 1.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
+
+.checklist { list-style: none; margin: 1.4rem 0 0; padding: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); }
+.checklist li { display: grid; grid-template-columns: 11.5rem minmax(0, 1fr); gap: 0.2rem 1.2rem; padding: 0.8rem 1.1rem; border-top: 1px solid var(--line); }
+.checklist li:first-child { border-top: 0; }
+.checklist .who { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); font-weight: 700; padding-top: 0.2rem; }
+.checklist .what-to { min-width: 0; }
+@media (max-width: 639px) { .checklist li { grid-template-columns: minmax(0, 1fr); } }
+.have { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr)); gap: 0.8rem; margin-top: 1.4rem; }
+.have .panel { min-width: 0; }
+.path { font-weight: 700; overflow-wrap: anywhere; }
+.pill { display: inline-block; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 0.05rem 0.55rem; margin-left: 0.4rem; vertical-align: middle; white-space: nowrap; }
+
+.tbl-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.93rem; background: var(--surface); border: 1px solid var(--line); }
+th, td { text-align: left; vertical-align: top; padding: 0.7rem 0.85rem; border-bottom: 1px solid var(--line); min-width: 0; }
+th { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); background: var(--surface-2); }
+tbody tr:last-child td { border-bottom: 0; }
+
+.btn {
+  min-height: 2.25rem; padding: 0 0.95rem; border-radius: var(--radius); border: 1px solid var(--accent);
+  background: var(--accent); color: var(--on-accent); font: 600 0.88rem var(--font-body); cursor: pointer;
+}
+.btn.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+.btn:hover { filter: brightness(1.08); }
+
+/* steps */
+.step { display: flex; flex-direction: column; gap: 0.9rem; padding-top: 2rem; border-top: 1px solid var(--line); }
+.step:first-of-type { border-top: 0; padding-top: 0; }
+.step-h { display: flex; align-items: flex-start; gap: 0.9rem; }
+.num { font-family: var(--font-mono); font-weight: 500; font-size: 0.9rem; min-width: 2.1rem; height: 2.1rem; display: grid; place-items: center; border: 1.5px solid var(--accent); color: var(--accent); border-radius: 50%; flex: none; margin-top: 0.05rem; }
+.step.done .num { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.step-h h3 { font-size: 1.3rem; flex: 1; min-width: 0; padding-top: 0.2rem; letter-spacing: -0.01em; }
+.step-body { display: flex; flex-direction: column; gap: 0.9rem; padding-left: 0; }
+@media (min-width: 640px) { .step-body { padding-left: 3rem; } }
+.what { max-width: 62ch; }
+.what.quiet { font-size: 0.93rem; color: var(--muted); }
+.tick { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; font-size: 0.88rem; font-weight: 600; color: var(--muted); min-height: 2.25rem; white-space: nowrap; user-select: none; }
+.tick input { position: absolute; opacity: 0; width: 1.4rem; height: 1.4rem; margin: 0; cursor: pointer; }
+.tick-box { width: 1.4rem; height: 1.4rem; border: 1.5px solid var(--muted); border-radius: 4px; display: grid; place-items: center; color: transparent; background: var(--surface); flex: none; }
+.tick input:checked + .tick-box { background: var(--ok); border-color: var(--ok); color: var(--surface); }
+.tick input:checked ~ .tick-txt { color: var(--ok); }
+.tick input:focus-visible + .tick-box { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.outcomes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.7rem; }
+@media (min-width: 720px) { .outcomes.two { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.oc { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.75rem 0.95rem; font-size: 0.93rem; min-width: 0; }
+.oc h4 { font-size: 0.72rem; letter-spacing: 0.09em; text-transform: uppercase; display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.3rem; }
+.oc.good h4 { color: var(--ok); }
+.oc.bad h4 { color: var(--bad); }
+.oc.note h4 { color: var(--warn); }
+.oc ul { margin: 0.2rem 0 0; padding-left: 1.15rem; display: flex; flex-direction: column; gap: 0.3rem; }
+.oc p + p, .oc p + ul { margin-top: 0.4rem; }
+
+/* caution: the one rule that must not be missed. Built from the existing warn token. */
+.caution {
+  display: flex; align-items: flex-start; gap: 0.8rem; min-width: 0;
+  background: var(--surface-2);
+  background: color-mix(in srgb, var(--warn) 11%, var(--surface));
+  border: 2px solid var(--warn); border-radius: var(--radius); padding: 0.9rem 1.1rem;
+}
+.caution > .icon { width: 1.5rem; height: 1.5rem; color: var(--warn); margin-top: 0.1rem; stroke-width: 2.2; }
+.caution-body { min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.caution h4 { font-size: 0.75rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--warn); font-weight: 800; }
+.caution p { font-weight: 600; }
+.caution p.plain { font-weight: 400; font-size: 0.93rem; }
+.caution code.i { background: var(--surface); }
+
+.prompts { display: flex; flex-direction: column; gap: 0.5rem; }
+.prompt-row { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 0.7rem 0.95rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.35rem; }
+.prompt-row .q { font-family: var(--font-mono); font-size: 0.82rem; color: var(--muted); overflow-wrap: anywhere; }
+.prompt-row .a { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; font-size: 0.93rem; }
+.prompt-row .a .lbl { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.prompt-row .a .ans { font-family: var(--font-mono); background: var(--accent-soft); color: var(--fg); border-radius: 4px; padding: 0.05rem 0.5rem; }
+
+.subhead { font-size: 1.05rem; font-weight: 700; margin-top: 0.4rem; }
+.connector { border: 1px solid var(--line); background: var(--surface); border-radius: var(--radius); padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: 0.7rem; }
+.connector-h { display: flex; align-items: center; gap: 0.8rem; justify-content: space-between; flex-wrap: wrap; }
+.connector-h h4 { font-size: 1.02rem; }
+.connector .oc { background: var(--bg); }
+.connector .step-id { font-family: var(--font-mono); color: var(--muted); font-size: 0.85rem; margin-right: 0.4rem; }
+
+/* glyph check */
+.glyphs { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.9rem; }
+@media (min-width: 720px) { .glyphs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.gcard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem; display: flex; flex-direction: column; gap: 0.7rem; min-width: 0; }
+.gcard h3 { font-size: 1rem; display: flex; align-items: center; gap: 0.45rem; }
+.gcard.good h3 { color: var(--ok); } .gcard.bad h3 { color: var(--bad); }
+.gcard p { font-size: 0.93rem; color: var(--muted); }
+.gscreen { padding: 0.8rem 1rem; display: grid; grid-template-columns: 5.6rem minmax(0, 1fr); gap: 0.5rem 0.8rem; align-items: center; overflow-x: auto; }
+.gscreen .lab { font-family: var(--font-mono); font-size: 0.72rem; color: var(--term-dim); }
+.gscreen svg { display: block; height: 24px; width: auto; max-width: none; }
+.fixes { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: 0.5rem; max-width: 62ch; }
+
+/* reset */
+.reset { display: flex; align-items: center; gap: 0.8rem; flex-wrap: wrap; color: var(--muted); font-size: 0.9rem; }
+.reset .confirm { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.linkbtn { background: none; border: 0; padding: 0.4rem 0; color: var(--accent); font: 600 0.9rem var(--font-body); cursor: pointer; text-decoration: underline; text-underline-offset: 0.18em; }
+
+/* troubleshooting: table on desktop, stacked cards on phones */
+.trouble { width: 100%; }
+@media (max-width: 719px) {
+  .trouble thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .trouble, .trouble tbody, .trouble tr, .trouble td { display: block; width: 100%; }
+  .trouble { border: 0; background: none; }
+  .trouble tr { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-bottom: 0.8rem; padding: 0.3rem 0; }
+  .trouble td { border: 0; padding: 0.4rem 0.9rem; }
+  .trouble td::before { content: attr(data-label); display: block; font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 700; margin-bottom: 0.1rem; }
+}
+.trouble td:first-child { font-weight: 600; width: 22%; }
+.trouble .cmd pre { font-size: 0.78rem; }
+
+.foot { color: var(--muted); font-size: 0.9rem; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17.5v.01"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5.5M12 7.5v.01"/></symbol>
+</svg>
+
+<div class="topbar" role="region" aria-label="Your progress">
+  <div class="topbar-in">
+    <b>Claude Workstation Setup</b>
+    <div class="meter" aria-hidden="true"><i id="meter-fill"></i></div>
+    <span class="count" id="count" aria-live="polite">0 of 14 done</span>
+  </div>
+</div>
+
+<div class="page">
+  <nav class="index" aria-label="Steps">
+    <h2>Before you start</h2>
+    <ul>
+      <li><a href="#have"><span class="t">What you have</span></a></li>
+      <li><a href="#ask-first"><span class="t">Check first</span></a></li>
+    </ul>
+    <hr>
+    <h2>Steps</h2>
+    <ol>
+      <li><a href="#step-brew" data-nav="sbrew"><span class="n">1</span><span class="t">Check Homebrew</span><i class="dot"></i></a></li>
+      <li><a href="#step-3" data-nav="s3"><span class="n">2</span><span class="t">chezmoi</span><i class="dot"></i></a></li>
+      <li><a href="#step-4" data-nav="s4"><span class="n">3</span><span class="t">Install everything</span><i class="dot"></i></a></li>
+      <li><a href="#step-5" data-nav="s5"><span class="n">4</span><span class="t">Restart the terminal</span><i class="dot"></i></a></li>
+      <li><a href="#step-6" data-nav="s6"><span class="n">5</span><span class="t">iTerm2 look</span><i class="dot"></i></a></li>
+      <li><a href="#step-7" data-nav="s7"><span class="n">6</span><span class="t">Claude sign-in</span><i class="dot"></i></a></li>
+      <li><a href="#step-gateway" data-nav="sgw"><span class="n">7</span><span class="t">Company gateway</span><i class="dot"></i></a></li>
+      <li><a href="#step-8" data-nav="s8"><span class="n">8</span><span class="t">Connect your tools</span><i class="dot"></i></a></li>
+      <li><a href="#step-9" data-nav="s9"><span class="n">9</span><span class="t">Health check</span><i class="dot"></i></a></li>
+    </ol>
+    <hr>
+    <ul>
+      <li><a href="#glyphs"><span class="t">Glyph check</span></a></li>
+      <li><a href="#troubleshooting"><span class="t">Troubleshooting</span></a></li>
+      <li><a href="#keep-going"><span class="t">Keep going</span></a></li>
+    </ul>
+  </nav>
+
+  <main class="main">
+
+    <header class="intro">
+      <div>
+        <div class="eyebrow">Mac setup guide</div>
+        <h1>Claude Workstation Setup</h1>
+        <p class="lead">When you finish, you will have a terminal where you type a plain-English request and Claude Code does the work across Linear, Confluence and Jira, Salesforce and GitHub. It can also build small internal web apps for the business and put them on Netlify.</p>
+        <p class="meta">Plan on 30 to 60 minutes of hands-on time, plus any waiting on an admin. Your ticks are saved in this browser, so you can close the page and come back.</p>
+      </div>
+      <div class="term preview" role="img" aria-label="Preview of the finished terminal prompt: you at your-mac in ~/projects on main, with a check mark, then a second line with the cursor.">
+        <span class="cap">What your prompt will look like when setup is done</span>
+        <pre><span class="c-dim">╭─</span> <span class="c-acc">you</span> <span class="c-dim">at</span> <span class="c-blue">your-mac</span> <span class="c-dim">in</span> <span class="c-green">~/projects</span> <span class="c-dim">on</span> <span class="c-blue">main</span> <span class="c-green">✔</span>
+<span class="c-dim">╰─</span> <span class="c-acc">⠠⠵</span><span class="cursor"></span></pre>
+      </div>
+    </header>
+
+    <section class="sec" id="have" aria-labelledby="h-have">
+      <h2 id="h-have">What you already have, and what setup adds</h2>
+      <p class="sub">Setup leaves the apps you already have as they are and adds the rest.</p>
+      <div class="have">
+        <div class="panel">
+          <h3>Already on your Mac</h3>
+          <ul>
+            <li>Homebrew</li>
+            <li>iTerm2</li>
+            <li>Claude Code</li>
+            <li>Visual Studio Code</li>
+            <li>1Password</li>
+            <li>The 1Password command line tool (<code class="i">op</code>)</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Setup adds</h3>
+          <ul>
+            <li>The fonts</li>
+            <li>The terminal theme and the prompt</li>
+            <li>The command-line tools Claude Code uses</li>
+            <li>Node</li>
+            <li><code class="i">claude-gw</code>, for the company gateway</li>
+            <li>The connections to Linear, Atlassian, GitHub, Netlify and Salesforce</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="h-payoff">
+      <h2 id="h-payoff">What you will be able to ask</h2>
+      <p class="sub">After setup, you type requests like these into Claude Code and it does the work.</p>
+      <ul class="examples stack">
+        <li><span class="tag">Linear</span><q>Summarize the open Linear issues in my team's current cycle.</q></li>
+        <li><span class="tag">Confluence</span><q>Draft a Confluence page from these meeting notes.</q></li>
+        <li><span class="tag">Salesforce</span><q>Pull this quarter's closed-won opportunities from Salesforce and total them by region.</q></li>
+        <li><span class="tag">Netlify</span><q>Build a small internal dashboard that shows this week's signups and deploy it.</q></li>
+      </ul>
+    </section>
+
+    <section class="sec" id="ask-first" aria-labelledby="h-ask">
+      <h2 id="h-ask">Check first</h2>
+      <p class="sub">Only an admin can confirm these. None of them stops you from starting, and you can ask about any of them as you go.</p>
+      <ul class="checklist">
+        <li><span class="who">Atlassian admin</span><span class="what-to">Rovo remote MCP access is turned on for your Atlassian site. Confluence and Jira connect through it in Step 8.</span></li>
+        <li><span class="who">Salesforce admin <span class="pill">Optional</span></span><span class="what-to">Which Salesforce edition you have. Salesforce's hosted MCP server requires Enterprise Edition or higher.</span></li>
+        <li><span class="who">IT or security</span><span class="what-to">Company SSO allows browser sign-in (OAuth) for Linear, Atlassian, GitHub and Netlify.</span></li>
+        <li><span class="who">IT</span><span class="what-to">Claude Code is not locked to one sign-in method (<code class="i">forceLoginMethod</code>). You use it two ways: with your Enterprise account and through the gateway.</span></li>
+        <li><span class="who">Gateway owner</span><span class="what-to">The gateway address and your gateway token, plus model names if the gateway needs them. You need these in Step 7.</span></li>
+      </ul>
+    </section>
+
+    <section class="sec" aria-labelledby="h-read">
+      <h2 id="h-read">How to use this page</h2>
+      <div class="stack">
+        <div class="panel">
+          <p>The terminal is an app where you type commands instead of clicking buttons. Typing a command does exactly what it says and nothing more.</p>
+          <ul>
+            <li>A dark box is a command. Click <b>Copy</b>, click into the terminal, paste with <b>Cmd+V</b>, then press <b>Return</b>.</li>
+            <li>Open <b>iTerm2</b> and run every command there. You already have it, and the steps assume you are in it.</li>
+            <li>Text scrolls past while a command runs. You only need to read it if it says FAIL or an error.</li>
+            <li>If a command finishes and gives you your prompt back with no error, it worked. Silence is success.</li>
+            <li>Every step is safe to run again. If one fails, fix that one thing and repeat it. You do not need to start over.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="sec" aria-labelledby="h-steps">
+      <h2 id="h-steps">The steps</h2>
+      <p class="sub">Tick each box as you finish. Do them in order, because each one builds on the last.</p>
+
+      <div class="stack" style="gap:2rem">
+
+        <!-- STEP 1: Homebrew check -->
+        <article class="step" id="step-brew" data-step="sbrew">
+          <div class="step-h">
+            <span class="num">1</span>
+            <h3>Check that Homebrew works</h3>
+            <label class="tick"><input type="checkbox" id="tick-sbrew" data-step="sbrew"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">You already have Homebrew. Confirm it works:</p>
+            <div class="term cmd"><pre><code>brew --version</code></pre><button class="copy" type="button">Copy</button></div>
+            <div class="outcomes two">
+              <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>A line that starts with <b>Homebrew</b> and a version number. Any extra lines after it are fine.</p></div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>Open a new iTerm2 window and try again. If it still fails, ask Michael.</p></div>
+            </div>
+          </div>
+        </article>
+
+        <!-- STEP 3 -->
+        <article class="step" id="step-3" data-step="s3">
+          <div class="step-h">
+            <span class="num">2</span>
+            <h3>Install chezmoi</h3>
+            <label class="tick"><input type="checkbox" id="tick-s3" data-step="s3"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">chezmoi downloads the settings from the repository and runs the install steps in the right order.</p>
+            <div class="term cmd"><pre><code>brew install chezmoi</code></pre><button class="copy" type="button">Copy</button></div>
+            <div class="outcomes two">
+              <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>Homebrew downloads and installs chezmoi, ending with something like "chezmoi was successfully installed."</p></div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>Run <code class="i">brew doctor</code> and follow what it recommends, then try again. If Homebrew itself is not working, go back to Step 1.</p></div>
+            </div>
+          </div>
+        </article>
+
+        <!-- STEP 4 -->
+        <article class="step" id="step-4" data-step="s4">
+          <div class="step-h">
+            <span class="num">3</span>
+            <h3>Run the main setup</h3>
+            <label class="tick"><input type="checkbox" id="tick-s4" data-step="s4"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">This is the big one. Run it in iTerm2. It asks four short questions, then adds what is missing, including the FiraCode Nerd Font that draws the icons and arrows in your prompt. It applies all the settings and the Claude Code theme, and installs two small commands, <code class="i">claude-gw-setup</code> and <code class="i">claude-gw</code>, which you use in Step 7. It leaves the apps you already have as they are. It takes a while, and the installs are the slowest part.</p>
+            <div class="term cmd"><pre><code>chezmoi init --apply https://github.com/mlaccetti/dotfiles-core</code></pre><button class="copy" type="button">Copy</button></div>
+            <p class="what">Partway through, setup prints a short list of apps it found already installed and left alone. It starts with <code class="i">Already installed, leaving as is</code>. That is expected, and nothing is wrong.</p>
+            <p class="what">You will be asked four questions in this exact order. The question text below is what the terminal prints.</p>
+            <div class="prompts">
+              <div class="prompt-row"><span class="q">Your full name (used for git commit authorship)</span><div class="a"><span class="lbl">Type</span><span>Your own name, as you would sign an email.</span></div></div>
+              <div class="prompt-row"><span class="q">Your email address (used for git commit authorship)</span><div class="a"><span class="lbl">Type</span><span>Your email address.</span></div></div>
+              <div class="prompt-row"><span class="q">Which profile is this? Type 'michael' for Michael's machine or 'shared' for anyone else (e.g. a spouse's laptop)</span><div class="a"><span class="lbl">Type</span><span class="ans">shared</span></div></div>
+              <div class="prompt-row"><span class="q">Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)</span><div class="a"><span class="lbl">Type</span><span class="ans">false</span><span style="color:var(--muted)">Even though you use 1Password. Nothing in this setup reads from it, and your 1Password app stays as it is.</span></div></div>
+            </div>
+            <div class="outcomes two">
+              <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>After the four answers, a long stream of output. Homebrew installs whatever is missing (several minutes), your settings are written, and there are notes about the iTerm2 profile and the Claude Code theme. A message about <code class="i">~/.oh-my-zsh</code> is safe to ignore on a new machine.</p></div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
+                <ul>
+                  <li>If one Homebrew package fails partway, that is expected on a managed Mac. Setup keeps going. Write down which one failed and get it approved, or ignore it for now. The health check in Step 9 lists what is still missing.</li>
+                  <li>If you mistype the profile answer, setup stops with <code class="i">profile must be 'michael' or 'shared'</code>. Run the command again.</li>
+                  <li>You can run this command again at any time. It asks the four questions again and does not damage your files.</li>
+                </ul>
+              </div>
+            </div>
+            <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Check your git identity afterward</h4><p>Your name and email are saved to your git settings only if none were set already. IT may have set them, and setup will not overwrite that. When it finishes, check what you ended up with:</p>
+              <div class="term cmd" style="margin-top:0.5rem"><pre><code>git config --global user.name</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="term cmd"><pre><code>git config --global user.email</code></pre><button class="copy" type="button">Copy</button></div>
+              <p style="margin-top:0.5rem">If either is wrong, set it with <code class="i">git config --global user.name "Your Name"</code> or <code class="i">git config --global user.email "you@example.com"</code>.</p></div>
+          </div>
+        </article>
+
+        <!-- STEP 5 -->
+        <article class="step" id="step-5" data-step="s5">
+          <div class="step-h">
+            <span class="num">4</span>
+            <h3>Restart the terminal</h3>
+            <label class="tick"><input type="checkbox" id="tick-s5" data-step="s5"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">Step 3 changed your shell settings. Open a brand-new terminal window (an old tab keeps its old settings), or run this in your current one:</p>
+            <div class="term cmd"><pre><code>exec zsh -l</code></pre><button class="copy" type="button">Copy</button></div>
+            <div class="outcomes two">
+              <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>Your prompt comes back with colored segments and git branch information, in place of the plain default prompt. Compare it to the preview at the top of this page.</p></div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If the new prompt does not appear, check that you opened a new window. If a command like <code class="i">bat</code>, <code class="i">fzf</code> or <code class="i">chezmoi</code> says "command not found", open a new window or run <code class="i">exec zsh -l</code> again.</p></div>
+            </div>
+          </div>
+        </article>
+
+        <!-- STEP 6 -->
+        <article class="step" id="step-6" data-step="s6">
+          <div class="step-h">
+            <span class="num">5</span>
+            <h3>Set the iTerm2 look</h3>
+            <label class="tick"><input type="checkbox" id="tick-s6" data-step="s6"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">You are running setup from inside iTerm2, so setup could not make the "Anthropic" profile the default. Do that yourself now. There is no command for it, so it is a few menu clicks:</p>
+            <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Set the Anthropic profile as the default</h4>
+              <p class="path">iTerm2 &gt; Settings &gt; Profiles &gt; Anthropic &gt; Other Actions (gear) &gt; Set as Default</p>
+              <ul>
+                <li>In iTerm2, open <b>Settings</b> from the iTerm2 menu, then click <b>Profiles</b>. Older versions call it Preferences.</li>
+                <li>Click <b>Anthropic</b> in the list on the left.</li>
+                <li>Click the small gear icon (<b>Other Actions</b>) under the list and choose <b>Set as Default</b>.</li>
+                <li>Open a new window. New windows use the new default. Compare it to the preview at the top of the page.</li>
+              </ul>
+            </div>
+            <div class="outcomes">
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If "Anthropic" is not in the list at all, see <a href="#troubleshooting">Troubleshooting</a>.</p></div>
+            </div>
+            <p class="what quiet">Setup only switches the default by itself when iTerm2 is closed while it runs. If your new window already matches the preview, tick this step and move on.</p>
+          </div>
+        </article>
+
+        <!-- STEP 7 -->
+        <article class="step" id="step-7" data-step="s7">
+          <div class="step-h">
+            <span class="num">6</span>
+            <h3>Check that Claude Code is signed in</h3>
+            <label class="tick"><input type="checkbox" id="tick-s7" data-step="s7"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">You already have Claude Code, and you are probably already signed in. If <code class="i">claude</code> already opens without asking you to sign in, and <code class="i">/status</code> shows your work account, you're done with this step. Otherwise, sign in to your company's Claude Enterprise account. You do this once, and after that plain <code class="i">claude</code> uses it every time. Do this in your new iTerm2 window.</p>
+            <div class="term cmd"><pre><code>claude</code></pre><button class="copy" type="button">Copy</button></div>
+            <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4>
+              <p>If you are not signed in, Claude Code asks how you want to log in.</p>
+              <ul>
+                <li>Choose the <b>Claude account</b> option (the one that mentions Pro, Max, Team, or Enterprise). Do <b>not</b> choose the Console or API key option.</li>
+                <li>A browser window opens. Sign in with your <b>work email</b>. Your company probably uses single sign-on (SSO), so you may land on your company's normal login page.</li>
+                <li>Go back to the terminal. Answer any other first-time questions, like the color theme or trusting the folder, with the suggested default.</li>
+              </ul>
+              <p>Once you see the Claude Code prompt, you are signed in. Type <code class="i">/exit</code> to leave for now.</p>
+            </div>
+            <p class="what quiet">When Claude Code asks whether you trust a folder, say yes only for folders you know, such as your own projects or repos from your team. A trusted folder can run its own setup scripts, and those scripts can use your saved tokens.</p>
+            <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
+              <ul>
+                <li>If <code class="i">claude</code> just sits there with no output, or macOS says it cannot verify the app, see <a href="#troubleshooting">Troubleshooting</a>.</li>
+                <li>If the browser window never opens or the sign-in is blocked, that is the sign-in request in "Check first". Check with IT.</li>
+                <li>If it says your account has no access, ask IT to confirm your work email has a Claude Enterprise seat.</li>
+                <li>If you picked the Console option by mistake, type <code class="i">/logout</code> (this is fine in plain <code class="i">claude</code>, and only there), then run <code class="i">claude</code> again and choose the Claude account option.</li>
+                <li>If the command is not recognized, open a new iTerm2 window.</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- STEP 8 (gateway) -->
+        <article class="step" id="step-gateway" data-step="sgw">
+          <div class="step-h">
+            <span class="num">7</span>
+            <h3>Set up the company gateway</h3>
+            <label class="tick"><input type="checkbox" id="tick-sgw" data-step="sgw"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">Your company also runs an LLM gateway. You set it up once, and then <code class="i">claude-gw</code> uses it. You need the gateway address and your gateway token from whoever runs the gateway at your company. That is the last item in "Check first". Have them ready.</p>
+            <div class="term cmd"><pre><code>claude-gw-setup</code></pre><button class="copy" type="button">Copy</button></div>
+            <p class="what">It asks you four questions:</p>
+            <div class="prompts">
+              <div class="prompt-row"><span class="q">Gateway address (starts with https://)</span><div class="a"><span class="lbl">Type</span><span>Paste the address you were given.</span></div></div>
+              <div class="prompt-row"><span class="q">Gateway token (typing is hidden)</span><div class="a"><span class="lbl">Type</span><span>Paste your token. Nothing appears on screen while you paste or type it. That is on purpose, so nobody looking over your shoulder can read it. Press Return when you are done.</span></div></div>
+              <div class="prompt-row"><span class="q">Does the gateway need specific model names? (y/N)</span><div class="a"><span class="lbl">Type</span><span class="ans">n</span><span style="color:var(--muted)">unless you were told the gateway uses its own model names. If so, type y and enter the Opus, Sonnet and Haiku names you were given. Press Return to skip one you were not given.</span></div></div>
+              <div class="prompt-row"><span class="q">Test the connection now? This sends one tiny request. (Y/n)</span><div class="a"><span class="lbl">Type</span><span>Press Return, which means yes.</span></div></div>
+            </div>
+            <div class="outcomes two">
+              <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>"The gateway answered", then "All set." Your token is saved in a private file that only your account can read (<code class="i">~/.config/claude-gw/</code>). It is never written into your regular Claude Code settings.</p></div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
+                <ul>
+                  <li>"command not found": run <code class="i">chezmoi apply</code> to install the commands, then open a new terminal window.</li>
+                  <li>"The gateway rejected the token": the token was mistyped or is not valid. Get it again from whoever runs the gateway and run <code class="i">claude-gw-setup</code> again. It is safe to run again at any time.</li>
+                  <li>"couldn't reach": check the address, and check that you are on the company network or VPN if the gateway needs it.</li>
+                </ul>
+              </div>
+            </div>
+
+            <h4 class="subhead">Which one to use: <code class="i">claude</code> or <code class="i">claude-gw</code></h4>
+            <div class="outcomes two">
+              <div class="oc"><h4>Enterprise</h4><p>Use <code class="i">claude</code> for work through the company's Claude Enterprise account.</p></div>
+              <div class="oc"><h4>Gateway</h4><p>Use <code class="i">claude-gw</code> when you need the company gateway instead. It takes the same commands but signs in with your saved gateway token, so some Claude.ai features, like apps connected on the Claude website, will not appear there.</p></div>
+            </div>
+            <p class="cmd-label">To start Claude through the gateway:</p>
+            <div class="term cmd"><pre><code>claude-gw</code></pre><button class="copy" type="button">Copy</button></div>
+
+            <div class="caution" role="note">
+              <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
+              <div class="caution-body">
+                <h4>Caution</h4>
+                <p>Never type <code class="i">/logout</code> inside <code class="i">claude-gw</code>. It can sign you out of Enterprise, and you would have to sign in again with <code class="i">claude</code>.</p>
+                <p class="plain">If a gateway session shows a warning about a saved login, ignore it and do not log out.</p>
+              </div>
+            </div>
+
+            <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Good to know about the gateway</h4>
+              <ul>
+                <li>Your Enterprise sign-in stays saved while you use the gateway. Switching is just typing the other name.</li>
+                <li>Usage is billed to the gateway, not to your Enterprise account.</li>
+                <li>Your Linear and Atlassian connections (Step 8) work in both, because they are added with <code class="i">--scope user</code>. Anything connected only through the Claude website appears only in plain <code class="i">claude</code>.</li>
+                <li>Company settings pushed to your Enterprise account may not apply. Remote control and voice do not work.</li>
+              </ul>
+            </div>
+          </div>
+        </article>
+
+        <!-- STEP 9 (id step-8, kept so saved links and ticks survive) -->
+        <article class="step" id="step-8" data-step="s8">
+          <div class="step-h">
+            <span class="num">8</span>
+            <h3>Connect your tools</h3>
+          </div>
+          <div class="step-body">
+            <p class="what">This is the point of the whole setup. Each tool below is connected once and opens a normal browser sign-in with your own login. Claude never sees your password. Type the commands at the normal prompt, not inside Claude, unless a step says otherwise. A browser tab opening is expected. If yours is blocked, that is the sign-in request from the top of the page.</p>
+            <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Why the commands say --scope user</h4><p>It makes each connection available in every folder you open Claude Code in, and in both <code class="i">claude</code> and <code class="i">claude-gw</code>. Without it, Claude Code saves the connection only for the folder you were in when you ran the command, and it seems to disappear everywhere else.</p></div>
+
+            <div class="connector" id="c-linear">
+              <div class="connector-h"><h4><span class="step-id">8a</span>Linear</h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-linear" data-step="s8-linear"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <div class="term cmd"><pre><code>claude mcp add --transport http linear-server --scope user https://mcp.linear.app/mcp</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>A confirmation that the server was added. It is not signed in yet. You sign in to it in 8c, after adding Atlassian.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If <code class="i">claude</code> is not recognized, open a new terminal window.</p></div>
+              </div>
+            </div>
+
+            <div class="connector" id="c-atlassian">
+              <div class="connector-h"><h4><span class="step-id">8b</span>Confluence and Jira (Atlassian)</h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-atlassian" data-step="s8-atlassian"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <p class="what">This only works after your Atlassian admin has enabled the connector, the first item in "Check first".</p>
+              <div class="term cmd"><pre><code>claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>The same as Linear: a confirmation that the server was added. You sign in to it in the next block.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>An error about access being disabled usually means your admin has not turned on Rovo or MCP yet. A sign-in that never finishes is usually the browser sign-in policy.</p></div>
+              </div>
+            </div>
+
+            <div class="connector" id="c-mcpauth">
+              <div class="connector-h"><h4><span class="step-id">8c</span>Sign in to Linear and Atlassian</h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-mcpauth" data-step="s8-mcpauth"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <p class="what">Adding a connection does not sign you in to it. Do that once for each, in plain <code class="i">claude</code>, not <code class="i">claude-gw</code>.</p>
+              <div class="term cmd"><pre><code>claude</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Then, inside Claude</h4>
+                <ul>
+                  <li>Type <code class="i">/mcp</code>, choose <b>linear-server</b>, and follow the steps in the browser window that opens to log in to Linear normally. Approve access there.</li>
+                  <li>Type <code class="i">/mcp</code> again, choose <b>atlassian</b>, and log in to your Atlassian account the same way.</li>
+                  <li>When both show as connected, type <code class="i">/exit</code>.</li>
+                </ul>
+              </div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p><code class="i">/mcp</code> lists Linear and Atlassian as connected.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If the browser does not open by itself, copy the web address Claude Code shows and open it yourself. If sign-in is blocked, ask IT about browser sign-in.</p></div>
+              </div>
+            </div>
+
+            <div class="connector" id="c-github">
+              <div class="connector-h"><h4><span class="step-id">8d</span>GitHub</h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-github" data-step="s8-github"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <div class="term cmd"><pre><code>gh auth login</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>A question about how to sign in. Choose "Login with a web browser" and follow along. It ends with "Logged in as" and your username.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If your company's GitHub uses SSO, you may need to authorize the login for your organization afterward, on GitHub's own website.</p></div>
+              </div>
+            </div>
+
+            <div class="connector" id="c-netlify">
+              <div class="connector-h"><h4><span class="step-id">8e</span>Netlify</h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-netlify" data-step="s8-netlify"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <p class="what">Netlify is where Claude puts the small web apps it builds for you.</p>
+              <div class="term cmd"><pre><code>netlify login</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>A browser window to log in to (or create) a Netlify account, then the terminal confirms you are logged in.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If <code class="i">netlify</code> is not found, run the command below to install it, then open a new iTerm2 window.</p></div>
+              </div>
+              <div class="term cmd"><pre><code>brew install netlify-cli</code></pre><button class="copy" type="button">Copy</button></div>
+            </div>
+
+            <div class="connector" id="c-salesforce">
+              <div class="connector-h"><h4><span class="step-id">8f</span>Salesforce <span class="pill">Optional</span></h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-salesforce" data-step="s8-salesforce" data-optional="1"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <p class="what">Skip this if you do not use Salesforce. The command line tool below works on any edition. If your admin confirms you have Enterprise Edition or higher, ask Michael whether Salesforce's hosted MCP server is a better fit. Claude Code can use whichever one is connected.</p>
+              <div class="term cmd"><pre><code>npm install -g @salesforce/cli</code></pre><button class="copy" type="button">Copy</button></div>
+              <p class="cmd-label">Then sign in. It opens a browser window:</p>
+              <div class="term cmd"><pre><code>sf org login web</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>The install adds the <code class="i">sf</code> command. Check with <code class="i">sf --version</code>. After you approve the browser login, the terminal says which org you are connected to.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
+                  <p>If <code class="i">npm</code> is not found, Node.js did not finish installing in Step 3. This is often a network or IT block. Run this, then open a new terminal window and try again:</p>
+                  <div class="term cmd"><pre><code>mise install</code></pre><button class="copy" type="button">Copy</button></div>
+                  <p>A sign-in that never finishes is the browser sign-in policy.</p></div>
+              </div>
+            </div>
+
+            <div class="connector" id="c-list">
+              <div class="connector-h"><h4><span class="step-id">8g</span>Confirm the connections</h4>
+                <label class="tick"><input type="checkbox" id="tick-s8-list" data-step="s8-list"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
+              <div class="term cmd"><pre><code>claude mcp list</code></pre><button class="copy" type="button">Copy</button></div>
+              <div class="outcomes two">
+                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>Each server you added (<code class="i">linear-server</code>, <code class="i">atlassian</code>) marked as connected.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If one says it needs authentication, run <code class="i">claude</code>, type <code class="i">/mcp</code>, choose that server, and follow the browser sign-in. If one shows an error, repeat its connect step above.</p></div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- STEP 9 -->
+        <article class="step" id="step-9" data-step="s9">
+          <div class="step-h">
+            <span class="num">9</span>
+            <h3>Run the health check</h3>
+            <label class="tick"><input type="checkbox" id="tick-s9" data-step="s9"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+          </div>
+          <div class="step-body">
+            <p class="what">This checks everything above in one pass. It is safe to run as often as you like.</p>
+            <div class="term cmd"><pre><code>bash "$(chezmoi source-path)/bin/doctor.sh"</code></pre><button class="copy" type="button">Copy</button></div>
+            <div class="outcomes">
+              <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>How to read it</h4>
+                <p>The output has sections, and each line starts with a label:</p>
+                <ul>
+                  <li><b>[PASS]</b> means that check is fine.</li>
+                  <li><b>[WARN]</b> is for your information. You can ignore it for now. A few are expected on your Mac: apps you already had, such as iTerm2, Visual Studio Code, 1Password and Claude Code, are reported as present but not managed by Homebrew. That is fine.</li>
+                  <li><b>[FAIL]</b> means something is missing. Each one has a <b>Fix:</b> line with the exact command to run.</li>
+                </ul>
+                <p>It ends with a summary. Partway through you will also see a glyph line that you have to check by eye, described next.</p>
+              </div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>Work through the [FAIL] lines from top to bottom and run each Fix line. Run the check again after each fix. If you skipped an app because IT has not approved it yet, a [FAIL] for that app is expected, and you can get it approved later. Each Fix line installs only the one thing that is missing, so it never touches the apps you already have.</p></div>
+            </div>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <section class="sec" id="glyphs" aria-labelledby="h-glyph">
+      <h2 id="h-glyph">The glyph check</h2>
+      <p class="sub">Partway through the health check, under "Glyph rendering test", you will see three lines: arrow separators, small icons and emoji. The script cannot judge these for you, so look at them yourself. The shapes below show what to expect. The font itself is installed in Step 3.</p>
+
+      <div class="glyphs stack">
+        <div class="gcard good">
+          <h3><svg class="icon"><use href="#i-check"/></svg>Looks right</h3>
+          <div class="term gscreen" role="img" aria-label="Correct rendering: solid triangular arrows joining colored blocks, small recognizable icons such as a cloud and a folder, and colored emoji.">
+            <span class="lab">separators</span>
+            <svg viewBox="0 0 150 24" aria-hidden="true"><rect x="0" y="0" width="36" height="24" fill="#6a9bcc"/><rect x="48" y="0" width="52" height="24" fill="#788c5d"/><polygon points="36,0 48,12 36,24" fill="#6a9bcc"/><polygon points="100,0 112,12 100,24" fill="#788c5d"/></svg>
+            <span class="lab">icons</span>
+            <svg viewBox="0 0 150 24" aria-hidden="true"><g fill="none" stroke="#faf9f5" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M6 17h12a4 4 0 0 0 .5-8A6 6 0 0 0 7 8.5 4.3 4.3 0 0 0 6 17z"/><path d="M34 6h7l2 3h9v10H34z"/><circle cx="68" cy="7" r="2.2"/><circle cx="68" cy="18" r="2.2"/><circle cx="78" cy="10" r="2.2"/><path d="M68 9.2v6.6M78 12.2c0 3-10 2-10 5"/></g></svg>
+            <span class="lab">emoji</span>
+            <svg viewBox="0 0 150 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="#788c5d"/><path d="M7.5 12.5l3 3 6-6.5" fill="none" stroke="#faf9f5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M40 21c-5 0-8-3.4-8-7.5 0-3 2-5.2 3.4-7 .6 2 1.6 3 2.6 3 0-3.6 1.6-6 3.2-8 .2 4 5.2 6.2 5.2 12 0 4-2.6 7.5-6.4 7.5z" fill="#d97757"/></svg>
+          </div>
+          <p>Separators are solid triangles that join one color block to the next, like the segments in your prompt. Icons are small recognizable pictures. Emoji are in color.</p>
+        </div>
+        <div class="gcard bad">
+          <h3><svg class="icon"><use href="#i-x"/></svg>Looks wrong</h3>
+          <div class="term gscreen" role="img" aria-label="Broken rendering: hollow empty rectangles, and question marks inside diamonds, in place of the arrows and icons.">
+            <span class="lab">separators</span>
+            <svg viewBox="0 0 150 24" aria-hidden="true"><rect x="2" y="3" width="14" height="18" fill="none" stroke="#faf9f5" stroke-width="1.5"/><rect x="26" y="3" width="14" height="18" fill="none" stroke="#faf9f5" stroke-width="1.5"/><rect x="50" y="3" width="14" height="18" fill="none" stroke="#faf9f5" stroke-width="1.5"/></svg>
+            <span class="lab">icons</span>
+            <svg viewBox="0 0 150 24" aria-hidden="true"><g><polygon points="12,1 23,12 12,23 1,12" fill="#faf9f5"/><text x="12" y="16.5" font-size="13" font-family="Arial, sans-serif" font-weight="700" text-anchor="middle" fill="#141413">?</text><polygon points="40,1 51,12 40,23 29,12" fill="#faf9f5"/><text x="40" y="16.5" font-size="13" font-family="Arial, sans-serif" font-weight="700" text-anchor="middle" fill="#141413">?</text><rect x="58" y="3" width="14" height="18" fill="none" stroke="#faf9f5" stroke-width="1.5"/></g></svg>
+            <span class="lab">emoji</span>
+            <svg viewBox="0 0 150 24" aria-hidden="true"><rect x="2" y="3" width="14" height="18" fill="none" stroke="#faf9f5" stroke-width="1.5"/><rect x="26" y="3" width="14" height="18" fill="none" stroke="#faf9f5" stroke-width="1.5"/></svg>
+          </div>
+          <p>Hollow rectangles, or a question mark inside a diamond. People call this a "tofu box". It means the terminal is not using the font that setup installed.</p>
+        </div>
+      </div>
+
+      <h3 class="subhead" style="margin-top:1.6rem">If you see hollow boxes or question marks</h3>
+      <ol class="fixes" style="margin-top:0.6rem">
+        <li>Confirm you finished Step 5 and that this window is using the <b>Anthropic</b> profile.</li>
+        <li>In iTerm2, open <b>Settings &gt; Profiles &gt; Anthropic &gt; Text</b> and check that the font is <b>FiraCode Nerd Font Mono</b>. If it shows something else, set it, then run the health check again.</li>
+        <li>If it is still wrong, open <b>Font Book</b>, search for "Fira Code", and confirm a style named <b>FiraCodeNFM-Reg</b> (or similar) is there and enabled. If it is missing, install the font again with the command below, then quit and reopen iTerm2.</li>
+      </ol>
+      <div class="term cmd" style="margin-top:0.8rem"><pre><code>brew install --cask font-fira-code-nerd-font</code></pre><button class="copy" type="button">Copy</button></div>
+    </section>
+
+    <section class="sec" id="troubleshooting" aria-labelledby="h-trouble">
+      <h2 id="h-trouble">Troubleshooting</h2>
+      <p class="sub">Find the symptom, then use the fix.</p>
+      <div class="tbl-wrap stack">
+        <table class="trouble">
+          <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
+          <tbody>
+                        <tr><td data-label="Symptom">Glyphs show as boxes or question marks</td><td data-label="Likely cause">The Nerd Font is not installed, or the iTerm2 profile or font is not selected.</td><td data-label="Fix">See <a href="#glyphs">the glyph check</a>.</td></tr>
+            <tr><td data-label="Symptom">"Anthropic" does not appear in iTerm2's Profiles list</td><td data-label="Likely cause">The profile file was not copied. Step 3 did not finish, or your company has locked iTerm2's Application Support folder.</td><td data-label="Fix">
+              <p>Run the health check (Step 9) and look at the "iTerm2 Dynamic Profile" section for the exact fix. Or copy the file by hand with this command, then restart iTerm2:</p>
+              <div class="term cmd" style="margin-top:0.5rem"><pre><code>mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles" &amp;&amp; cp "$(chezmoi source-path)/iterm2/Anthropic.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Anthropic.json"</code></pre><button class="copy" type="button">Copy</button></div></td></tr>
+            <tr><td data-label="Symptom">Setup fails with a 1Password error</td><td data-label="Likely cause">You answered <code class="i">true</code> to the 1Password question and the <code class="i">op</code> tool is not signed in.</td><td data-label="Fix">Run <code class="i">op signin</code> and run the setup again, or run <code class="i">chezmoi init</code> again and answer <code class="i">false</code>. This should not come up unless you added something yourself.</td></tr>
+            <tr><td data-label="Symptom">Your shell does not look like zsh, or <code class="i">~/.zshrc</code> does not seem to apply</td><td data-label="Likely cause">Your default shell is not zsh. Some managed Macs change it.</td><td data-label="Fix">
+              <p>Check your shell. You should see <code class="i">/bin/zsh</code>:</p>
+              <div class="term cmd" style="margin-top:0.5rem"><pre><code>echo $SHELL</code></pre><button class="copy" type="button">Copy</button></div>
+              <p style="margin-top:0.5rem">If it is something else, run the command below and open a new terminal. If your company blocks it, ask IT to set your default shell.</p>
+              <div class="term cmd" style="margin-top:0.5rem"><pre><code>chsh -s /bin/zsh</code></pre><button class="copy" type="button">Copy</button></div></td></tr>
+            <tr><td data-label="Symptom">A command like <code class="i">bat</code>, <code class="i">fzf</code> or <code class="i">chezmoi</code> says "command not found" right after installing</td><td data-label="Likely cause">You are still in the old shell, from before Homebrew or chezmoi was on your PATH.</td><td data-label="Fix">Open a brand-new terminal window, or run <code class="i">exec zsh -l</code>.</td></tr>
+            <tr><td data-label="Symptom">macOS says it cannot verify <code class="i">claude</code>, or <code class="i">claude</code> produces no output and never finishes</td><td data-label="Likely cause">macOS is waiting for a security confirmation, possibly behind another window. Setup does not replace your Claude Code, so this should be rare.</td><td data-label="Fix">Look for the dialog in your other windows and click <b>Open</b> or <b>Open Anyway</b>. If there is no such button, open <b>System Settings &gt; Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b> next to the message about <code class="i">claude</code>. You only do this once on a computer. Pressing Ctrl+C to cancel is safe.</td></tr>
+            <tr><td data-label="Symptom">A browser sign-in window never opens, or opens and then shows an error</td><td data-label="Likely cause">Company single sign-on or security software is blocking it.</td><td data-label="Fix">Ask IT to confirm browser sign-in is allowed for that tool. This is the sign-in request in "Check first".</td></tr>
+            <tr><td data-label="Symptom"><code class="i">claude-gw</code> says "Run claude-gw-setup first."</td><td data-label="Likely cause">The gateway has not been set up on this computer yet, or its saved settings were deleted.</td><td data-label="Fix">Run <code class="i">claude-gw-setup</code> (Step 7). You need the gateway address and token from whoever runs the gateway.</td></tr>
+            <tr><td data-label="Symptom">The gateway rejects your token ("401", "unauthorized" or "invalid API key")</td><td data-label="Likely cause">The saved token is wrong, expired, or was revoked.</td><td data-label="Fix">Get a fresh token from whoever runs the gateway, then run <code class="i">claude-gw-setup</code> again and paste it in.</td></tr>
+            <tr><td data-label="Symptom">A "model not found" (or similar) error in <code class="i">claude-gw</code></td><td data-label="Likely cause">The gateway uses its own model names.</td><td data-label="Fix">Ask whoever runs the gateway for its Opus, Sonnet and Haiku model names, then run <code class="i">claude-gw-setup</code> again and answer <code class="i">y</code> to the model names question.</td></tr>
+            <tr><td data-label="Symptom">Your Enterprise login seems gone after using the gateway (plain <code class="i">claude</code> asks you to log in again)</td><td data-label="Likely cause">You probably typed <code class="i">/logout</code> inside <code class="i">claude-gw</code>, which signs you out of Enterprise.</td><td data-label="Fix">Run <code class="i">claude</code> and sign in again with your work email (Step 6). Then use <code class="i">claude-gw</code> without <code class="i">/logout</code>.</td></tr>
+            <tr><td data-label="Symptom">Linear or Atlassian works in one folder but is missing in another</td><td data-label="Likely cause">It was added without <code class="i">--scope user</code>, so it was saved only for that one folder.</td><td data-label="Fix">Run the connect command again from Step 8a or 8b, with <code class="i">--scope user</code> as written there.</td></tr>
+            <tr><td data-label="Symptom">You are not sure what belongs in <code class="i">~/.zshrc.local</code></td><td data-label="Likely cause">It is easy to confuse with the managed <code class="i">~/.zshrc</code>.</td><td data-label="Fix">You can ignore it for now. It is your own file, and setup never overwrites it.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="sec" id="keep-going" aria-labelledby="h-go">
+      <h2 id="h-go">Keep going</h2>
+      <div class="stack">
+        <p class="what" style="max-width:62ch">To start Claude Code, open a terminal in a project folder and type <code class="i">claude</code>. That uses your company's Claude Enterprise account. To use the company gateway instead, type <code class="i">claude-gw</code>, and never type <code class="i">/logout</code> inside it. Then try the four requests from the top of this page, in your own words. The health check from Step 9 is always safe to run again, and it points at whatever is actually broken.</p>
+        <div class="term cmd"><pre><code>claude</code></pre><button class="copy" type="button">Copy</button></div>
+        <div class="reset">
+          <span id="reset-idle"><button class="linkbtn" type="button" id="reset-open">Reset progress</button></span>
+          <span class="confirm" id="reset-confirm" hidden>
+            <span>Clear every tick on this page?</span>
+            <button class="btn" type="button" id="reset-yes">Clear ticks</button>
+            <button class="btn ghost" type="button" id="reset-no">Keep them</button>
+          </span>
+          <span id="reset-note" aria-live="polite"></span>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+(function () {
+  var PREFIX = 'cws:v1:';
+  var mem = {};
+
+  function readTick(id) {
+    try { var v = localStorage.getItem(PREFIX + id); if (v !== null) return v === '1'; } catch (e) {}
+    return !!mem[id];
+  }
+  function writeTick(id, on) {
+    mem[id] = on;
+    try { if (on) localStorage.setItem(PREFIX + id, '1'); else localStorage.removeItem(PREFIX + id); } catch (e) {}
+  }
+
+  var boxes = Array.prototype.slice.call(document.querySelectorAll('.tick input[data-step]'));
+  var required = boxes.filter(function (b) { return !b.getAttribute('data-optional'); });
+  var fill = document.getElementById('meter-fill');
+  var count = document.getElementById('count');
+
+  function stepsDone(step) {
+    if (step !== 's8') return readTick(step);
+    var ids = ['s8-linear', 's8-atlassian', 's8-mcpauth', 's8-github', 's8-netlify', 's8-list'];
+    return ids.every(readTick);
+  }
+
+  function refresh() {
+    var done = 0;
+    required.forEach(function (b) { if (b.checked) done++; });
+    count.textContent = done + ' of ' + required.length + ' done';
+    fill.style.width = Math.round((done / required.length) * 100) + '%';
+    Array.prototype.forEach.call(document.querySelectorAll('article.step'), function (a) {
+      var id = a.getAttribute('data-step');
+      a.classList.toggle('done', stepsDone(id));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-nav]'), function (a) {
+      a.classList.toggle('done', stepsDone(a.getAttribute('data-nav')));
+    });
+  }
+
+  boxes.forEach(function (b) {
+    b.checked = readTick(b.getAttribute('data-step'));
+    b.addEventListener('change', function () {
+      writeTick(b.getAttribute('data-step'), b.checked);
+      refresh();
+    });
+  });
+  refresh();
+
+  /* copy buttons */
+  function selectNode(node) {
+    try {
+      var r = document.createRange(); r.selectNodeContents(node);
+      var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+    } catch (e) {}
+  }
+  function flash(btn, text) {
+    var orig = btn.getAttribute('data-label') || btn.textContent;
+    btn.setAttribute('data-label', orig);
+    btn.textContent = text;
+    clearTimeout(btn._t);
+    btn._t = setTimeout(function () { btn.textContent = orig; }, 2000);
+  }
+  function fallbackCopy(node, btn) {
+    selectNode(node);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    flash(btn, ok ? 'Copied' : 'Selected, press Cmd+C');
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('button.copy'), function (btn) {
+    btn.addEventListener('click', function () {
+      var tid = btn.getAttribute('data-target');
+      var node = tid ? document.getElementById(tid) : btn.parentNode.querySelector('code');
+      if (!node) return;
+      var text = node.textContent.replace(/\s+$/, '');
+      var done = false;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { flash(btn, 'Copied'); }, function () { fallbackCopy(node, btn); });
+          done = true;
+        }
+      } catch (e) { done = false; }
+      if (!done) fallbackCopy(node, btn);
+    });
+  });
+
+  /* reset with built-in confirmation */
+  var idle = document.getElementById('reset-idle');
+  var confirmBox = document.getElementById('reset-confirm');
+  var note = document.getElementById('reset-note');
+  document.getElementById('reset-open').addEventListener('click', function () {
+    idle.hidden = true; confirmBox.hidden = false; note.textContent = '';
+    document.getElementById('reset-no').focus();
+  });
+  document.getElementById('reset-no').addEventListener('click', function () {
+    confirmBox.hidden = true; idle.hidden = false;
+    document.getElementById('reset-open').focus();
+  });
+  document.getElementById('reset-yes').addEventListener('click', function () {
+    boxes.forEach(function (b) { b.checked = false; writeTick(b.getAttribute('data-step'), false); });
+    refresh();
+    confirmBox.hidden = true; idle.hidden = false;
+    note.textContent = 'Progress cleared.';
+  });
+})();
+</script>
