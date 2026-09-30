@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# claude-gw: run Claude Code through the company LLM gateway.
+#
+# Use plain `claude` for the company Claude Enterprise login. Use `claude-gw`
+# for the gateway. Set the gateway up once with `claude-gw-setup`.
+#
+# How it works: `claude --settings <file>` loads an extra settings file for
+# this run only. That file holds the gateway address and an apiKeyHelper that
+# reads the token from a private file each time Claude Code needs it. The token
+# never appears on the command line, in the environment, or in
+# ~/.claude/settings.json, and the saved Enterprise login is left untouched.
+#
+# NEVER type /logout or /login inside a claude-gw session: that changes the
+# saved Enterprise login.
+#
+# CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is deliberately not set. apiKeyHelper never
+# puts the token in the environment, so there is nothing for it to scrub, and
+# it would also strip other credentials (cloud, package registry) that tools
+# run from Claude Code may legitimately need.
+#
+# Works with macOS's stock /bin/bash 3.2.
+set -eu
+
+cfg="$HOME/.config/claude-gw"
+
+if [ ! -f "$cfg/token" ] || [ ! -f "$cfg/settings.json" ]; then
+  echo "Run claude-gw-setup first." >&2
+  exit 1
+fi
+
+if ! command -v claude >/dev/null 2>&1; then
+  echo "Claude Code (claude) was not found on your PATH. Open a new terminal window and try again." >&2
+  exit 1
+fi
+
+# A stray exported credential would outrank the gateway's apiKeyHelper, so
+# make sure none of these leak into this session.
+unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_PROFILE \
+  CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX \
+  CLAUDE_CODE_USE_FOUNDRY
+
+exec claude --settings "$cfg/settings.json" "$@"
