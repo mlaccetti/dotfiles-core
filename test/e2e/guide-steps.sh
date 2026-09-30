@@ -283,10 +283,19 @@ fi
 
 # 6c. claude-gw itself, with a packet capture around it.
 DNSQ='udp port 53 or (tcp[tcpflags] & (tcp-syn|tcp-ack) == tcp-syn)'
-# syn_dests CAPFILE: destination "addr:port" of every outbound TCP SYN in a tcpdump text capture.
-syn_dests() { sed -n 's/.* > \([^ ]*\)\.\([0-9][0-9]*\): Flags \[S[EW]*\],.*/\1:\2/p' "$1" | sort -u; }
+# syn_dests: reads tcpdump text on stdin, prints the destination "addr:port" of every TCP SYN.
+syn_dests() { sed -n 's/.* > \([^ ]*\)\.\([0-9][0-9]*\): Flags \[S[EW]*\],.*/\1:\2/p' | sort -u; }
+# Not loopback: what would actually leave the VM.
+non_loopback() { grep -v '^127\.0\.0\.1:\|^::1:'; }
+# tcpdump -k NP (macOS) tags each packet with the process that sent it, so the
+# capture can say WHO connected, not just that something did. macOS itself talks
+# to Apple hosts in the background (OCSP, iCloud), which must not count against
+# claude. A native Claude Code process is named after its versioned file, not
+# "claude", so resolve the symlink to get the name tcpdump prints.
+CLAUDE_PROC="$(/usr/bin/python3 -c 'import os, sys; print(os.path.basename(os.path.realpath(sys.argv[1])))' "$HOME/.local/bin/claude")"
+CLAUDE_PROC_RE="proc ${CLAUDE_PROC//./\\.}:"
 capture_start() { # NAME
-  sudo -n /usr/sbin/tcpdump -i any -n -l -tt "$DNSQ" >"$GW/$1.cap" 2>&1 &
+  sudo -n /usr/sbin/tcpdump -i any -n -l -tt -k NP "$DNSQ" >"$GW/$1.cap" 2>&1 &
   TCPDUMP_PID=$!
   sleep 3
 }
@@ -300,12 +309,12 @@ capture_stop() {
 capture_start control
 curl -sS -m 15 -o /dev/null https://api.anthropic.com/ >/dev/null 2>&1
 capture_stop
-control_dns="$(count 'anthropic\.com' "$GW/control.cap")"
-control_syn_ips="$(syn_dests "$GW/control.cap" | grep -v '^127\.0\.0\.1:\|^::1:' | tr '\n' ' ')"
-if [ -n "$control_syn_ips" ]; then
-  pass 6 "control: the capture sees a plain curl to api.anthropic.com" "SYN to ${control_syn_ips}; anthropic.com DNS lines: $control_dns"
+control_curl_syn="$(grep -a 'proc curl:' "$GW/control.cap" | syn_dests | non_loopback | tr '\n' ' ')"
+control_curl_dns="$(grep -a 'proc mDNSResponder' "$GW/control.cap" | grep -ac 'eproc curl:')"
+if [ -n "$control_curl_syn" ]; then
+  pass 6 "control: the capture attributes a plain curl to api.anthropic.com to curl" "curl SYN to ${control_curl_syn}; DNS lookups made for curl: $control_curl_dns"
 else
-  info 6 "control: capture saw no SYN for curl to api.anthropic.com (no outbound network?)" "$(head -3 "$GW/control.cap" | tr '\n' '|')"
+  info 6 "control: no SYN attributed to curl (no outbound network from the VM?)" "$(head -3 "$GW/control.cap" | tr '\n' '|')"
 fi
 
 before="$(wc -l <"$GW/requests.jsonl" | tr -d ' ')"
@@ -339,15 +348,23 @@ done
 pass 6 "token is in no settings file (claude-gw, ~/.claude/settings.json, ~/.claude.json)"
 
 # api.anthropic.com: capture-based check (no MITM).
-gw_dns="$(grep -E 'A\?|AAAA\?|HTTPS\?' "$GW/gw.cap" | grep -Eic 'anthropic\.com|claude\.ai|claude\.com')"
-gw_remote_syn="$(syn_dests "$GW/gw.cap" | grep -v '^127\.0\.0\.1:\|^::1:' | tr '\n' ' ')"
-gw_local_syn="$(syn_dests "$GW/gw.cap" | grep -c "^127\.0\.0\.1:$PORT\$")"
-[ "${gw_dns:-0}" -eq 0 ] && pass 6 "no DNS lookup for anthropic.com / claude.ai / claude.com during claude-gw" "control saw $control_dns" || bad 6 "DNS lookups for Anthropic hosts during claude-gw" "$gw_dns"
-if [ -z "$gw_remote_syn" ]; then
-  pass 6 "no outbound TCP connection left the VM during claude-gw (so none to api.anthropic.com)" "loopback connections to the stub: $gw_local_syn"
+grep -aE "$CLAUDE_PROC_RE" "$GW/gw.cap" >"$GW/gw-claude.cap"
+gw_remote_syn="$(syn_dests <"$GW/gw-claude.cap" | non_loopback | tr '\n' ' ')"
+gw_local_syn="$(syn_dests <"$GW/gw-claude.cap" | grep -c "^127\.0\.0\.1:$PORT\$")"
+gw_claude_dns="$(grep -aEc '(A|AAAA|HTTPS)\? ' "$GW/gw-claude.cap")"
+anthropic_dns="$(grep -aE '(A|AAAA|HTTPS)\? ' "$GW/gw.cap" | grep -Eic 'anthropic\.com|claude\.ai|claude\.com')"
+if [ "${gw_local_syn:-0}" -ge 1 ]; then
+  pass 6 "the capture attributes claude-gw's own connections to it (process $CLAUDE_PROC)" "connections to the stub: $gw_local_syn"
 else
-  bad 6 "claude-gw opened outbound connections" "$gw_remote_syn"
+  bad 6 "the capture saw no connection from claude-gw to the stub, so its attribution cannot be trusted" "process name '$CLAUDE_PROC'"
 fi
+if [ -z "$gw_remote_syn" ] && [ "${gw_claude_dns:-0}" -eq 0 ]; then
+  pass 6 "claude-gw made no outbound connection and no DNS lookup (so none to api.anthropic.com)" "connections to non-loopback addresses: 0"
+else
+  bad 6 "claude-gw reached beyond the stub" "SYN to: ${gw_remote_syn:-none}; DNS lookups: $gw_claude_dns"
+fi
+[ "${anthropic_dns:-0}" -eq 0 ] && pass 6 "no process looked up anthropic.com, claude.ai or claude.com while claude-gw ran" || bad 6 "an Anthropic hostname was looked up during claude-gw" "$anthropic_dns"
+info 6 "background traffic from macOS itself during the run (not claude)" "$(grep -av "$CLAUDE_PROC_RE" "$GW/gw.cap" | syn_dests | non_loopback | tr '\n' ' ')"
 
 # ================================================================== 7
 section "Step 7: Connect tools"
