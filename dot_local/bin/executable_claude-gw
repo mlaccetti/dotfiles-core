@@ -10,6 +10,12 @@
 # never appears on the command line, in the environment, or in
 # ~/.claude/settings.json, and the saved Enterprise login is left untouched.
 #
+# The gateway token only goes to the gateway (see the export near the end).
+# Project settings cannot redirect it with ANTHROPIC_BASE_URL or apiKeyHelper,
+# because --settings outranks them. A project you choose to trust can still run
+# hooks, and hooks can read any file you can, this token file included, just as
+# they can read ~/.ssh. Only trust projects you would run code from.
+#
 # NEVER type /logout or /login inside a claude-gw session: that changes the
 # saved Enterprise login.
 #
@@ -28,6 +34,29 @@ if [ ! -f "$cfg/token" ] || [ ! -f "$cfg/settings.json" ]; then
   exit 1
 fi
 
+# Refuse to start with a token Claude Code could not use. If the helper fails,
+# Claude Code sends an empty credential to the gateway (it does not fall back to
+# the Enterprise login), so nothing leaks, but every request would then fail
+# with a confusing error. The token itself is never printed.
+tok="$(cat "$cfg/token" 2>/dev/null)" || tok=""
+case "$tok" in
+  "")
+    echo "The gateway token file is empty or unreadable. Run claude-gw-setup again." >&2
+    exit 1
+    ;;
+  *[[:space:][:cntrl:]]*)
+    echo "The gateway token file has spaces or extra lines in it. Run claude-gw-setup again." >&2
+    exit 1
+    ;;
+esac
+unset tok
+
+mode="$(stat -f '%Lp' "$cfg/token" 2>/dev/null || true)"
+case "$mode" in
+  ""|600|400) ;;
+  *) echo "Warning: $cfg/token is readable by other users (mode $mode). Run: chmod 600 '$cfg/token'" >&2 ;;
+esac
+
 if ! command -v claude >/dev/null 2>&1; then
   echo "Claude Code (claude) was not found on your PATH. Open a new terminal window and try again." >&2
   exit 1
@@ -38,5 +67,13 @@ fi
 unset ANTHROPIC_API_KEY ANTHROPIC_AUTH_TOKEN ANTHROPIC_PROFILE \
   CLAUDE_CODE_OAUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX \
   CLAUDE_CODE_USE_FOUNDRY
+
+# Claude Code's background calls (feature flags, profile lookup, connector
+# registry) go to api.anthropic.com, not to the gateway. In an interactive
+# session the profile lookup sends the apiKeyHelper's output (the gateway token)
+# to api.anthropic.com as x-api-key. This variable turns those calls off, so the
+# token is only ever sent to the gateway. It also turns off auto-update checks
+# and telemetry for gateway sessions.
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 
 exec claude --settings "$cfg/settings.json" "$@"
