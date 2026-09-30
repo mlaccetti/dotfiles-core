@@ -1,4 +1,4 @@
-# prompt.zsh — Anthropic-palette-driven agnoster prompt (recolor only).
+# prompt.zsh: Anthropic-palette-driven agnoster prompt (recolor only).
 #
 # This is a straight recolor of the original prompt: same two-line layout,
 # same glyphs (⠠⠵ / ○ / ✔ / ✘✘✘), same git-dirty logic. The only change is

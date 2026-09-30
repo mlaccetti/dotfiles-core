@@ -354,8 +354,8 @@ section "Fonts"
 # Output is captured first and matched second. `cmd | grep -q` is wrong under
 # `set -o pipefail`: grep exits at the first match, the writer (fc-list,
 # system_profiler, find) gets SIGPIPE, and the pipeline reports failure even
-# though the font IS there. fc-list exists whenever fontconfig does (netlify-cli
-# pulls it in), so this used to report a false FAIL right after a good install.
+# though the font IS there. fc-list exists whenever fontconfig does (some Homebrew
+# formulae pull it in), so this used to report a false FAIL right after a good install.
 FONT_FOUND=0
 FONT_FILES="$(find "${HOME_DIR}/Library/Fonts" /Library/Fonts -iname "*FiraCode*Nerd*" 2>/dev/null)"
 if [ -n "$FONT_FILES" ]; then
@@ -600,7 +600,7 @@ done
 
 # node and npm are not in the Brewfile: mise installs Node.js (which bundles
 # npm) from dot_config/mise/config.toml via run_onchange_after_25-mise-install.
-# They are required because building web apps with Claude and
+# They are required because Claude Code projects and
 # `npm install -g @salesforce/cli` both need them. They have their own loop
 # because the fix is `mise install`, not `brew bundle`.
 for cli in node npm; do

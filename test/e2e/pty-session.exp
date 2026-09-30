@@ -2,7 +2,7 @@
 # pty-session.exp TIMEOUT LINE...
 #
 # Opens an interactive login zsh on a pty (a new iTerm2 tab) and types each
-# LINE into it, like she would. A LINE that starts with "!" is typed as is and
+# LINE into it, like a reader would. A LINE that starts with "!" is typed as is and
 # followed by a short wait for the shell to settle (use it for `exec zsh -l`,
 # which replaces the shell). Any other LINE is followed by a sentinel; the
 # command's exit status is printed as "RC(<n>)=<status>" after it finishes.

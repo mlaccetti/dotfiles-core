@@ -2,7 +2,7 @@
 
 This is a compact execution contract for an AI coding agent running this
 setup on someone's behalf. It exists so an agent doesn't have to parse
-the prose in [`SETUP.md`](./SETUP.md), written for a non-technical human.
+the prose in [`SETUP.md`](./SETUP.md), written for a human reader.
 Steps are numbered to match that document. Run them in order.
 
 **Hard rule: on any step marked "requires human" below, stop and ask a
@@ -21,13 +21,13 @@ detail.**
 | 5. Restart shell | `exec zsh -l` (or open a fresh shell for subsequent commands) | `[ "$ZSH_CUSTOM" = "$HOME/.oh-my-zsh-custom" ]` | No. |
 | 6. iTerm2 default profile | Nothing to run: step 4's `run_once_after_10-install-iterm2-profile.sh` sets it automatically. Check with `pgrep -x iTerm2` first. **Never quit or kill iTerm2.** If iTerm2 is not running, it is already done; to retry: `bash "$(chezmoi source-path)/run_once_after_10-install-iterm2-profile.sh"`. | `[ "$(defaults read com.googlecode.iterm2 "Default Bookmark Guid")" = "$(jq -r '.Profiles[0].Guid' "$(chezmoi source-path)/iterm2/Anthropic.json")" ]` | **No, if iTerm2 was not running** during step 4 (the default is set for you). **Requires human if iTerm2 was open**: the script skips the write because iTerm2 would overwrite it on quit, and the agent must not quit the app. The human then quits and reopens iTerm2 and you re-run the script, or they use iTerm2 > Settings > Profiles > Anthropic > Other Actions > Set as Default. |
 | 7. Claude theme | (already set in step 4) | `[ "$(jq -r '.theme' "$HOME/.claude/settings.json")" = "custom:anthropic" ]` | No. |
-| 8. doctor.sh | `bash "$(chezmoi source-path)/bin/doctor.sh"` | exit code `0` | The script itself is non-interactive, but its "Glyph rendering test" section requires a **human** to look at the output and judge it (see below). See the caveat below: this may legitimately exit non-zero on a fresh `shared`-profile machine. |
+| 8. doctor.sh | `bash "$(chezmoi source-path)/bin/doctor.sh"` | exit code `0` | The script itself is non-interactive, but its "Glyph rendering test" section requires a **human** to look at the output and judge it (see below). See the caveat below: this may legitimately exit non-zero on a fresh machine. |
 | 9. Claude Enterprise sign-in | `claude` (first run; choose the Claude account option, never the Console / API key option) | the human confirms Claude Code reached its prompt after the browser sign-in (do not run `claude` from an agent session to probe login state) | **Requires human.** The first run may block on a GUI Gatekeeper dialog, then asks for a browser login with the human's work email (probably company SSO). |
 | 10. Gateway setup | `claude-gw-setup` (installed to `~/.local/bin` by step 4) | `test -f "$HOME/.config/claude-gw/token" && test -f "$HOME/.config/claude-gw/settings.json"` | **Requires human.** It needs the gateway address and a secret token from the human's company, typed with hidden input. Never ask for the token in chat, never handle it, and never read, print, or cat `~/.config/claude-gw/` files. |
 | 11. Linear MCP | `claude mcp add --transport http linear-server --scope user https://mcp.linear.app/mcp` | `claude mcp list` shows `linear-server` connected | **Requires human** to complete the browser OAuth login: run `claude`, type `/mcp`, choose `linear-server`, follow the browser sign-in. |
 | 12. Atlassian MCP | `claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp` | `claude mcp list` shows `atlassian` connected | **Requires human** for the browser OAuth login (`/mcp` inside `claude`, as in step 11), and requires the org's Atlassian admin to have already enabled Rovo/MCP (do not assume this; ask). |
 | 13. Salesforce CLI (optional) | `npm install -g @salesforce/cli` then `sf org login web` | `sf --version`; `sf org list` shows the org | **Requires human** for the browser OAuth login. Skip entirely if the human doesn't use Salesforce. |
-| 14. GitHub / Netlify | `gh auth login` and `netlify login` | `gh auth status`; `netlify status` | **Requires human** for both browser OAuth logins. |
+| 14. GitHub | `gh auth login` | `gh auth status` | **Requires human** for the browser OAuth login. |
 
 Always pass `--scope user` to `claude mcp add`. The default scope is
 `local`, which makes the server available only in the directory where the
@@ -57,9 +57,9 @@ human whether IT has confirmed this rather than assuming.
 
 `bin/doctor.sh`'s "Required CLIs" section checks for `bat`, `fzf`, `gh`,
 `jq`, `rg`, `mise`, `op`, `claude`, `node`, and `npm`. Since commit
-`6923336` it no longer checks `nvim` or `linear`, which the shared-tier
+`6923336` it no longer checks `nvim` or `linear`, which the core-tier
 Brewfile intentionally does not install, so a correctly set-up
-`shared`-profile machine should exit `0`.
+machine should exit `0`.
 
 `node` and `npm` come from mise, not the Brewfile:
 `dot_config/mise/config.toml` pins `node = "lts"`, and
@@ -73,7 +73,7 @@ Node installer.
 
 ### Driving `chezmoi init` non-interactively
 
-By default, `chezmoi init` reads its four questions from the terminal
+By default, `chezmoi init` reads its three questions from the terminal
 and will hang waiting for input if run with no human attached. This was
 verified against the installed `chezmoi` binary (v2.72.2) and the
 upstream `init` command reference: `chezmoi init` supports
@@ -85,12 +85,10 @@ to the person this machine is for. Stop and ask a human for:
 
 - their full name
 - their email address
-- confirmation that profile should be `shared` (it should be, for any
-  machine that isn't Michael's own, but confirm rather than assume)
 - whether they want 1Password integration (`true`/`false`); default to
   `false` if they're unsure, per the prompt's own wording
 
-Once you have all four answers, re-read `.chezmoi.toml.tmpl` immediately
+Once you have all three answers, re-read `.chezmoi.toml.tmpl` immediately
 before building the command. The `--promptString`/`--promptBool` keys
 must match that file's prompt text **exactly, character for character**;
 if a maintainer edits the wording, this command silently breaks (chezmoi
@@ -100,7 +98,7 @@ copy of the prompt text from an earlier session.
 
 ```bash
 chezmoi init --apply \
-  --promptString "Your full name (used for git commit authorship)=FULL_NAME,Your email address (used for git commit authorship)=EMAIL_ADDRESS,Which profile is this? Type 'michael' for Michael's machine or 'shared' for anyone else (e.g. a spouse's laptop)=shared" \
+  --promptString "Your full name (used for git commit authorship)=FULL_NAME,Your email address (used for git commit authorship)=EMAIL_ADDRESS" \
   --promptBool "Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)=false" \
   https://github.com/mlaccetti/dotfiles-core
 ```
@@ -115,8 +113,8 @@ back to asking the human to run `chezmoi init` themselves interactively.
 - **Step 1**, if the Xcode Command Line Tools aren't already installed
   (GUI dialog and license).
 - **Step 2**, if Homebrew needs a sudo password the agent doesn't have.
-- **Step 4**, for the name, email, and profile confirmation (never
-  invent these).
+- **Step 4**, for the name, email, and 1Password answer (never
+  invent the name or email).
 - **Step 6**, only if iTerm2 was running during step 4 (the default profile
   was not set automatically, and the agent must not quit iTerm2). If it was
   closed, this step is already done.

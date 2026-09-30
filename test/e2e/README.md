@@ -1,9 +1,9 @@
 # End-to-end test of the setup guide
 
-This runs every command on `guide/claude-workstation-setup.html` (the guide she
-follows), in order, inside a fresh macOS virtual machine that looks like her Mac.
-It answers the four setup questions the way she does, then checks what each step
-promises.
+This runs every command on `guide/claude-workstation-setup.html` (the guide a
+reader follows), in order, inside a fresh macOS virtual machine that looks like a
+Mac where the apps are already installed. It answers the three setup questions
+the way a reader would, then checks what each step promises.
 
 ```sh
 test/e2e/run.sh          # the one command; exit 0 = green, 1 = a check failed, 2 = could not run
@@ -11,7 +11,7 @@ test/e2e/run.sh --keep   # leave the VM on disk to poke at (delete it yourself a
 ```
 
 The guide runs the public repo (`chezmoi init --apply
-https://github.com/mlaccetti/dotfiles-core`), exactly as she will. A fix
+https://github.com/mlaccetti/dotfiles-core`), exactly as a reader will. A fix
 therefore has to be merged to the default branch before a run can see it.
 
 ## Prerequisites
@@ -73,17 +73,17 @@ https://github.com/cirruslabs/tart before you use it commercially.
 4. **`prepare-run.sh` makes the run faithful, not easy.** It updates Homebrew,
    removes the CI tooling the Cirrus image ships (`jq`, `gh`, `yq`, `mise`,
    `node`, `rbenv`, `awscli`, `git-lfs` and the rest, plus everything the Brewfile
-   installs), so every tool she uses afterwards was provided by the setup. It
-   then gives her shell the startup files she has today: Homebrew's `shellenv`
+   installs), so every tool used afterwards was provided by the setup. It
+   then gives the shell the startup files a typical Mac has: Homebrew's `shellenv`
    line in `~/.zprofile` and `export PATH="$HOME/.local/bin:$PATH"` in `~/.zshrc`,
    nothing else. It prints every removal with its reason.
 5. **`guide-steps.sh` runs the guide** in an interactive login zsh on a real pty
    (what iTerm2 opens), with `expect` answering the prompts:
    Homebrew, `chezmoi`, the main setup (name `Test User`, email
-   `test@example.com`, profile `shared`, 1Password `false`), the shell restart,
+   `test@example.com`, 1Password `false`), the shell restart,
    `claude --version`, the gateway against a local stub, the MCP connections at
-   user scope, the binaries (`gh`, `netlify`, `sf`), `doctor.sh` (must exit 0 with
-   no FAIL, and every WARN must be one of the five the guide tells her to expect), the font and profile files, the troubleshooting commands, and a second
+   user scope, the binaries (`gh`, `sf`), `doctor.sh` (must exit 0 with
+   no FAIL, and every WARN must be one of the five the guide tells you to expect), the font and profile files, the troubleshooting commands, and a second
    `chezmoi apply` plus `doctor.sh` to prove nothing changes.
 6. **The report** is copied to `test/e2e/reports/<timestamp>/` (git-ignored):
    `prepare-run.log`, `guide-steps.log`, `coverage.txt` (each guide command as
@@ -120,9 +120,9 @@ host key checking off because the key changes on every clone.
 These need a person, a real account or a real screen:
 
 - **Browser sign-ins.** Claude Enterprise login (`claude`, `/status`), the
-  `/mcp` OAuth flow for Linear and Atlassian, `gh auth login`, `netlify login`
+  `/mcp` OAuth flow for Linear and Atlassian, `gh auth login`
   and `sf org login web`. The binaries are checked (`gh --version`,
-  `netlify --version`, `sf --version`, and that `claude mcp list` shows both
+  `sf --version`, and that `claude mcp list` shows both
   servers), not the logins.
 - **The iTerm2 GUI.** iTerm2 never runs in the VM. The test proves the profile
   file lands and that the `Default Bookmark Guid` preference matches the profile
@@ -133,9 +133,9 @@ These need a person, a real account or a real screen:
   profile references `FiraCodeNFM-Reg`.
 - **The Enterprise login and the real gateway.** The gateway is a local stub. A
   real gateway address, token, model names, company network or VPN are not tested.
-- **Her real Mac.** Her macOS version, IT/MDM policy (blocked installs, Gatekeeper
+- **A real Mac.** Its macOS version, IT/MDM policy (blocked installs, Gatekeeper
   and security dialogs, the browser sign-in policy), an existing git identity, and
-  anything else she has that the VM does not.
+  anything else a real machine has that the VM does not.
 - **`chsh -s /bin/zsh`,** which asks for the account password.
 - **Claude Code's first-run questions** (theme, folder trust), which need a
   logged-in interactive session.
@@ -145,8 +145,8 @@ These need a person, a real account or a real screen:
 | File | What it is |
 |---|---|
 | `run.sh` | Host driver: prerequisites, coverage, build, clone, boot, run, report, clean up |
-| `provision-her-state.sh` | In-VM, one time: puts the base image in her starting state |
-| `prepare-run.sh` | In-VM, every run: removes CI tooling, sets her shell files, updates Homebrew |
+| `provision-her-state.sh` | In-VM, one time: puts the base image in the starting state (apps already installed) |
+| `prepare-run.sh` | In-VM, every run: removes CI tooling, sets the shell startup files, updates Homebrew |
 | `guide-steps.sh` | In-VM: the guide, in order, with the checks |
 | `pty-run.exp`, `pty-session.exp` | `expect` drivers: a command with prompts, and a typed interactive session |
 | `stub-gateway.py` | The classification-only HTTPS gateway stub |

@@ -12,8 +12,8 @@ examples of what that looks like once everything below is connected:
   Product space."
 - "Look up the Acme Corp account in Salesforce and tell me when their
   contract renews."
-- "Build me a small internal dashboard that shows this week's signups,
-  and put it somewhere I can share a link to."
+- "Build a small internal dashboard for this week's signups, following
+  our deployment guide in Confluence."
 
 Claude does the typing, clicking, and API calls. You describe what you
 want in your own words. The rest of this document is the one-time setup
@@ -64,7 +64,7 @@ sign-in for new tools until it's allow-listed. Send this before you hit
 Step 9:
 
 > Hi, I'm setting up Claude Code to connect to Linear, Atlassian, GitHub,
-> Netlify, and Salesforce using each service's official sign-in flow (the
+> and Salesforce using each service's official sign-in flow (the
 > same "log in with your company account" popup you'd see anywhere
 > else). Could you confirm our SSO/security policy allows browser-based
 > sign-in for these, or let me know if any of them need to be
@@ -242,7 +242,7 @@ retry. If Homebrew itself isn't working, go back to Step 2.
 
 ### Step 4: Run `chezmoi init --apply`
 
-This is the main step. It asks four short questions, then installs the
+This is the main step. It asks three short questions, then installs the
 Homebrew packages, applies all the dotfiles, and configures iTerm2 and
 Claude Code. It also installs two small commands, `claude-gw-setup` and
 `claude-gw`, which you'll use in Step 10.
@@ -251,11 +251,11 @@ Claude Code. It also installs two small commands, `claude-gw-setup` and
 chezmoi init --apply https://github.com/mlaccetti/dotfiles-core
 ```
 
-You'll be asked four questions, in this exact order. Here's what each one
+You'll be asked three questions, in this exact order. Here's what each one
 means and what to type:
 
 1. **`Your full name (used for git commit authorship)`**
-   Type your name, e.g. `Jane Laccetti`.
+   Type your name, e.g. `Jane Doe`.
 
 2. **`Your email address (used for git commit authorship)`**
    Type the email you want associated with your commits.
@@ -272,10 +272,7 @@ means and what to type:
    > `git config --global user.name "Your Name"` and
    > `git config --global user.email "you@example.com"`.
 
-3. **`Which profile is this? Type 'michael' for Michael's machine or 'shared' for anyone else (e.g. a spouse's laptop)`**
-   Type `shared`.
-
-4. **`Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)`**
+3. **`Do you use 1Password and want this setup to read secrets from it? Type true or false - if unsure, type false (you can turn this on later)`**
    Type `false` unless you already use the 1Password CLI (`op`) and know
    you want chezmoi to read secrets from it. You can change your mind
    later by running `chezmoi init` again.
@@ -285,7 +282,7 @@ means and what to type:
    get installed by Homebrew in the next part of this step either way
    (see the IT heads-up above).
 
-**You should see:** after the four questions, a long stream of output:
+**You should see:** after the three questions, a long stream of output:
 Homebrew installing/checking packages (this is the slowest part, several
 minutes; if some of the apps are already on the Mac, it prints an
 "Already installed, leaving as is" line naming them and skips them, and
@@ -303,11 +300,8 @@ web apps rely on.
   going; note which package failed and either get it approved or ignore
   it for now. `bin/doctor.sh` (Step 8) will tell you what's still
   missing.
-- If you mistype an answer to question 3, `chezmoi init` will print an
-  error and stop (`profile must be 'michael' or 'shared'`). Just run the
-  command again.
 - You can safely re-run `chezmoi init --apply https://github.com/mlaccetti/dotfiles-core`
-  at any time. It re-asks the four questions and rewrites chezmoi's own
+  at any time. It re-asks the three questions and rewrites chezmoi's own
   config, but never overwrites your dotfiles incorrectly.
 
 ### Step 5: Restart your shell
@@ -641,11 +635,10 @@ Edition or higher (item 2), ask whether Salesforce's Hosted MCP Server is
 a better fit than this CLI; either way, Claude Code can use whichever
 one is connected.
 
-### Step 14: Connect Claude Code to GitHub and Netlify
+### Step 14: Connect Claude Code to GitHub
 
-These cover the other two things in your actual goal: automating git
-(opening pull requests, checking status) and deploying small webapps
-Claude builds for you.
+This covers automating git: opening pull requests, checking status, and
+so on.
 
 ```bash
 gh auth login
@@ -658,17 +651,6 @@ your-username."
 **If this fails:** the same SSO note applies if your company's GitHub is
 behind SSO approval; you may need to authorize the token for your
 organization afterward on GitHub's own website.
-
-```bash
-netlify login
-```
-
-**You should see:** a browser window opens for you to log in to (or
-create) a Netlify account, then the terminal confirms you're logged in.
-
-**If this fails:** if `netlify` isn't found, re-run
-`brew bundle --file="$(chezmoi source-path)/Brewfile"` to pick up
-`netlify-cli`, then open a new terminal.
 
 ## Troubleshooting
 
