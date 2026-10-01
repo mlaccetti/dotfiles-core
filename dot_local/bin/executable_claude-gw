@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# claude-gw: run Claude Code through the company LLM gateway.
+# claude-gw: run Claude Code through an LLM gateway (optional).
 #
-# Use plain `claude` for the company Claude Enterprise login. Use `claude-gw`
-# for the gateway. Set the gateway up once with `claude-gw-setup`.
+# Use plain `claude` for your Claude account login. Use `claude-gw` for the
+# gateway. Set the gateway up once with `claude-gw-setup`.
 #
 # How it works: `claude --settings <file>` loads an extra settings file for
 # this run only. That file holds the gateway address and an apiKeyHelper that
 # reads the token from a private file each time Claude Code needs it. The token
 # never appears on the command line, in the environment, or in
-# ~/.claude/settings.json, and the saved Enterprise login is left untouched.
+# ~/.claude/settings.json, and the saved Claude login is left untouched.
 #
 # The gateway token only goes to the gateway (see the export near the end).
 # Project settings cannot redirect it with ANTHROPIC_BASE_URL or apiKeyHelper,
@@ -17,7 +17,7 @@
 # they can read ~/.ssh. Only trust projects you would run code from.
 #
 # NEVER type /logout or /login inside a claude-gw session: that changes the
-# saved Enterprise login.
+# saved Claude login.
 #
 # CLAUDE_CODE_SUBPROCESS_ENV_SCRUB is deliberately not set. apiKeyHelper never
 # puts the token in the environment, so there is nothing for it to scrub, and
@@ -36,7 +36,7 @@ fi
 
 # Refuse to start with a token Claude Code could not use. If the helper fails,
 # Claude Code sends an empty credential to the gateway (it does not fall back to
-# the Enterprise login), so nothing leaks, but every request would then fail
+# the Claude account login), so nothing leaks, but every request would then fail
 # with a confusing error. The token itself is never printed.
 tok="$(cat "$cfg/token" 2>/dev/null)" || tok=""
 case "$tok" in

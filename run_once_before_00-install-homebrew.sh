@@ -2,7 +2,7 @@
 # Installs Homebrew if it isn't already present.
 #
 # Not using `set -e` for the whole script on purpose: a blocked Homebrew
-# install (e.g. corporate/MDM policy) should not abort the rest of
+# install (e.g. a Mac that restricts installs) should not abort the rest of
 # `chezmoi apply` - your other dotfiles still need to land.
 set -uo pipefail
 
@@ -38,10 +38,10 @@ if /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install
   fi
 else
   echo "    !! Homebrew install did not complete."
-  echo "    !! This is expected on a corporate/MDM-managed Mac if installing"
-  echo "    !! new software requires IT approval or is blocked by policy."
-  echo "    !! ACTION NEEDED: ask IT to approve/install Homebrew, or install"
-  echo "    !! it yourself once you have permission, then re-run: chezmoi apply"
+  echo "    !! This can happen on a Mac that restricts installing new software."
+  echo "    !! ACTION NEEDED: ask whoever manages your Mac to approve/install"
+  echo "    !! Homebrew, or install it yourself once you have permission, then"
+  echo "    !! re-run: chezmoi apply"
   echo "    Continuing with the rest of the setup (dotfiles will still be applied)."
 fi
 

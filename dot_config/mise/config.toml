@@ -4,8 +4,7 @@
 # and put on PATH by `mise activate` in ~/.zshrc.
 #
 # node: the current LTS release. It includes `npm`, which is all that's
-# needed to build small web apps with Claude and to run
-# `npm install -g @salesforce/cli`. "lts" tracks the newest LTS line, so
+# needed to build small web apps with Claude. "lts" tracks the newest LTS line, so
 # a re-install picks up a new major version when Node promotes one.
 #
 # pnpm is deliberately not listed: npm covers everything above, and a

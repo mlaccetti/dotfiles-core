@@ -3,9 +3,8 @@
 # collected at `chezmoi init` time (see .chezmoi.toml.tmpl) - but ONLY if
 # git doesn't already have an identity configured.
 #
-# A work laptop may already have a git identity set by IT or
-# by the employer's onboarding. A chezmoi-managed ~/.gitconfig would risk
-# clobbering that, so this script never manages ~/.gitconfig as a whole -
+# A Mac may already have a git identity set up. A chezmoi-managed
+# ~/.gitconfig would risk clobbering that, so this script never manages ~/.gitconfig as a whole -
 # it sets user.name/user.email individually via `git config --global`,
 # and only the ones that are missing. An existing identity is never
 # overwritten.

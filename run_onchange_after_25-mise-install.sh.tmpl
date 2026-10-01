@@ -31,7 +31,7 @@ if [ -z "$MISE_BIN" ]; then
 fi
 
 if [ -z "$MISE_BIN" ]; then
-  echo "    !! mise isn't installed (Homebrew may be missing or blocked by IT)."
+  echo "    !! mise isn't installed (Homebrew may be missing or blocked on this Mac)."
   echo "    !! Without it there is no Node.js or npm on this machine."
   echo "    !! ACTION NEEDED: get Homebrew and mise installed (see the brew bundle"
   echo "    !! step's output above), then run:"
@@ -50,7 +50,7 @@ if "$MISE_BIN" install --yes; then
   echo "    Runtimes installed/verified (Node.js and npm)."
 else
   echo "    !! mise could not finish installing. This is usually a network"
-  echo "    !! problem or a corporate proxy/firewall blocking nodejs.org."
+  echo "    !! problem or a proxy/firewall blocking nodejs.org."
   echo "    !! ACTION NEEDED: check the output above, then run:"
   echo "    !!   mise install"
   echo "    Continuing with the rest of the setup."

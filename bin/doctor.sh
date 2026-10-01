@@ -147,9 +147,9 @@ section "Homebrew"
 # =============================================================================
 # Every formula/cask in the Brewfile is checked individually against what is
 # actually on this machine, instead of trusting the all-or-nothing answer of
-# `brew bundle check`. That matters on a company-managed Mac: IT often
-# installs 1Password, Slack, and similar apps itself, so brew did not install
-# them, but they are there and work fine. Those are a WARN ("present, just
+# `brew bundle check`. That matters when apps like 1Password and Slack were
+# installed another way (the App Store, a vendor installer), so brew did not
+# install them, but they are there and work fine. Those are a WARN ("present, just
 # not managed by Homebrew"), never a FAIL. Only something that is really
 # absent is a FAIL.
 
@@ -232,7 +232,7 @@ check_brewfile() {
       fi
       continue
     fi
-    # Present on disk but not installed through brew (an app IT deployed, a
+    # Present on disk but not installed through brew (an app from the App Store, a
     # drag-installed app, fonts copied by hand): a WARN, not a missing
     # package.
     if found="$(cask_outside_brew "$name")"; then
@@ -600,8 +600,8 @@ done
 
 # node and npm are not in the Brewfile: mise installs Node.js (which bundles
 # npm) from dot_config/mise/config.toml via run_onchange_after_25-mise-install.
-# They are required because Claude Code projects and
-# `npm install -g @salesforce/cli` both need them. They have their own loop
+# They are required because Claude Code projects (small web apps) need them.
+# They have their own loop
 # because the fix is `mise install`, not `brew bundle`.
 for cli in node npm; do
   if command -v "$cli" >/dev/null 2>&1; then

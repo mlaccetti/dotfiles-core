@@ -82,7 +82,7 @@ https://github.com/cirruslabs/tart before you use it commercially.
    Homebrew, `chezmoi`, the main setup (name `Test User`, email
    `test@example.com`, 1Password `false`), the shell restart,
    `claude --version`, the gateway against a local stub, the MCP connections at
-   user scope, the binaries (`gh`, `sf`), `doctor.sh` (must exit 0 with
+   user scope, the binaries (`gh`, `npm`), `doctor.sh` (must exit 0 with
    no FAIL, and every WARN must be one of the five the guide tells you to expect), the font and profile files, the troubleshooting commands, and a second
    `chezmoi apply` plus `doctor.sh` to prove nothing changes.
 6. **The report** is copied to `test/e2e/reports/<timestamp>/` (git-ignored):
@@ -119,11 +119,10 @@ host key checking off because the key changes on every clone.
 
 These need a person, a real account or a real screen:
 
-- **Browser sign-ins.** Claude Enterprise login (`claude`, `/status`), the
-  `/mcp` OAuth flow for Linear and Atlassian, `gh auth login`
-  and `sf org login web`. The binaries are checked (`gh --version`,
-  `sf --version`, and that `claude mcp list` shows both
-  servers), not the logins.
+- **Browser sign-ins.** The Claude account login (`claude`, `/status`), the
+  `/mcp` OAuth flow for Linear and Atlassian, and `gh auth login`.
+  The binaries are checked (`gh --version`, `npm --version`, and that
+  `claude mcp list` shows both servers), not the logins.
 - **The iTerm2 GUI.** iTerm2 never runs in the VM. The test proves the profile
   file lands and that the `Default Bookmark Guid` preference matches the profile
   (the iTerm2-closed path). It cannot prove iTerm2 loads the profile, and it
@@ -131,9 +130,9 @@ These need a person, a real account or a real screen:
 - **The glyph check.** The doctor's arrows, icons and emoji have to be looked at.
   The test only proves the FiraCode Nerd Font files exist and the Anthropic
   profile references `FiraCodeNFM-Reg`.
-- **The Enterprise login and the real gateway.** The gateway is a local stub. A
-  real gateway address, token, model names, company network or VPN are not tested.
-- **A real Mac.** Its macOS version, IT/MDM policy (blocked installs, Gatekeeper
+- **The Claude account login and a real gateway.** The gateway is a local stub. A
+  real gateway address, token, model names, or a network or VPN it needs are not tested.
+- **A real Mac.** Its macOS version, install restrictions (blocked installs, Gatekeeper
   and security dialogs, the browser sign-in policy), an existing git identity, and
   anything else a real machine has that the VM does not.
 - **`chsh -s /bin/zsh`,** which asks for the account password.

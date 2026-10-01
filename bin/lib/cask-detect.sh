@@ -25,7 +25,7 @@
 # would install, so the check follows whatever the cask really ships instead
 # of a hand-kept name table:
 #   - app artifacts: the named .app bundle exists in /Applications or
-#     ~/Applications (installed by IT, drag-installed, or by the vendor's
+#     ~/Applications (installed by an installer, drag-installed, or by the vendor's
 #     updater).
 #   - font artifacts: EVERY listed font file exists in ~/Library/Fonts or
 #     /Library/Fonts. All-or-nothing on purpose: a partial family is not

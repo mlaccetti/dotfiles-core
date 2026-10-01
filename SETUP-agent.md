@@ -7,9 +7,8 @@ Steps are numbered to match that document. Run them in order.
 
 **Hard rule: on any step marked "requires human" below, stop and ask a
 human before proceeding. Do not guess, fabricate a name/email, click
-through a GUI dialog on the agent's behalf, assume an IT approval that
-hasn't happened, or invent a Salesforce/Atlassian/Linear organization
-detail.**
+through a GUI dialog on the agent's behalf, assume an approval that
+hasn't happened, or invent an Atlassian or Linear account detail.**
 
 | Step | Command | Verify (expect exit 0 unless noted) | Interactive? |
 |---|---|---|---|
@@ -22,12 +21,11 @@ detail.**
 | 6. iTerm2 default profile | Nothing to run: step 4's `run_once_after_10-install-iterm2-profile.sh` sets it automatically. Check with `pgrep -x iTerm2` first. **Never quit or kill iTerm2.** If iTerm2 is not running, it is already done; to retry: `bash "$(chezmoi source-path)/run_once_after_10-install-iterm2-profile.sh"`. | `[ "$(defaults read com.googlecode.iterm2 "Default Bookmark Guid")" = "$(jq -r '.Profiles[0].Guid' "$(chezmoi source-path)/iterm2/Anthropic.json")" ]` | **No, if iTerm2 was not running** during step 4 (the default is set for you). **Requires human if iTerm2 was open**: the script skips the write because iTerm2 would overwrite it on quit, and the agent must not quit the app. The human then quits and reopens iTerm2 and you re-run the script, or they use iTerm2 > Settings > Profiles > Anthropic > Other Actions > Set as Default. |
 | 7. Claude theme | (already set in step 4) | `[ "$(jq -r '.theme' "$HOME/.claude/settings.json")" = "custom:anthropic" ]` | No. |
 | 8. doctor.sh | `bash "$(chezmoi source-path)/bin/doctor.sh"` | exit code `0` | The script itself is non-interactive, but its "Glyph rendering test" section requires a **human** to look at the output and judge it (see below). See the caveat below: this may legitimately exit non-zero on a fresh machine. |
-| 9. Claude Enterprise sign-in | `claude` (first run; choose the Claude account option, never the Console / API key option) | the human confirms Claude Code reached its prompt after the browser sign-in (do not run `claude` from an agent session to probe login state) | **Requires human.** The first run may block on a GUI Gatekeeper dialog, then asks for a browser login with the human's work email (probably company SSO). |
-| 10. Gateway setup | `claude-gw-setup` (installed to `~/.local/bin` by step 4) | `test -f "$HOME/.config/claude-gw/token" && test -f "$HOME/.config/claude-gw/settings.json"` | **Requires human.** It needs the gateway address and a secret token from the human's company, typed with hidden input. Never ask for the token in chat, never handle it, and never read, print, or cat `~/.config/claude-gw/` files. |
+| 9. Claude sign-in | `claude` (first run; choose the Claude account option, never the Console / API key option) | the human confirms Claude Code reached its prompt after the browser sign-in (do not run `claude` from an agent session to probe login state) | **Requires human.** The first run may block on a GUI Gatekeeper dialog, then asks for a browser login with the account the human uses for Claude. |
+| 10. LLM gateway setup (optional) | `claude-gw-setup` (installed to `~/.local/bin` by step 4) | `test -f "$HOME/.config/claude-gw/token" && test -f "$HOME/.config/claude-gw/settings.json"` | **Requires human.** Skip entirely if the human doesn't use an LLM gateway. Otherwise it needs the gateway address and a secret token from whoever runs the human's gateway, typed with hidden input. Never ask for the token in chat, never handle it, and never read, print, or cat `~/.config/claude-gw/` files. |
 | 11. Linear MCP | `claude mcp add --transport http linear-server --scope user https://mcp.linear.app/mcp` | `claude mcp list` shows `linear-server` connected | **Requires human** to complete the browser OAuth login: run `claude`, type `/mcp`, choose `linear-server`, follow the browser sign-in. |
-| 12. Atlassian MCP | `claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp` | `claude mcp list` shows `atlassian` connected | **Requires human** for the browser OAuth login (`/mcp` inside `claude`, as in step 11), and requires the org's Atlassian admin to have already enabled Rovo/MCP (do not assume this; ask). |
-| 13. Salesforce CLI (optional) | `npm install -g @salesforce/cli` then `sf org login web` | `sf --version`; `sf org list` shows the org | **Requires human** for the browser OAuth login. Skip entirely if the human doesn't use Salesforce. |
-| 14. GitHub | `gh auth login` | `gh auth status` | **Requires human** for the browser OAuth login. |
+| 12. Atlassian MCP | `claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp` | `claude mcp list` shows `atlassian` connected | **Requires human** for the browser OAuth login (`/mcp` inside `claude`, as in step 11), and requires Rovo/MCP to already be enabled for the human's Atlassian site (do not assume this; ask). |
+| 13. GitHub | `gh auth login` | `gh auth status` | **Requires human** for the browser OAuth login. |
 
 Always pass `--scope user` to `claude mcp add`. The default scope is
 `local`, which makes the server available only in the directory where the
@@ -36,22 +34,22 @@ different folder.
 
 ### Two ways to run Claude Code
 
-`claude` uses the human's company Claude Enterprise login (step 9).
-`claude-gw` uses the company LLM gateway through the token saved in step
-10. Both see the MCP servers added with `--scope user`; connectors added
+`claude` uses the human's Claude account login (step 9). `claude-gw`
+(only if the human set up an LLM gateway) uses that gateway through the
+token saved in step 10. Both see the MCP servers added with `--scope user`; connectors added
 only through the claude.ai website appear only in plain `claude`.
 
 **Never run `/logout` or `/login` inside `claude-gw`, and never type or
-send them to it.** They change the stored Enterprise login. If a gateway
+send them to it.** They change the stored Claude login. If a gateway
 session shows a warning about a saved login, ignore it. Never run the real
 `claude-gw` from an agent session to test anything, and never print
 `~/.claude/settings.json`, `~/.config/claude-gw/token`, or environment
 variables that could hold a credential.
 
-The gateway also needs the human's IT team to confirm that Claude Code
-managed settings don't force a single login method (`forceLoginMethod` or
-`forceLoginOrgUUID`); if they do, one of the two modes is blocked. Ask the
-human whether IT has confirmed this rather than assuming.
+If Claude Code's managed settings force a single login method
+(`forceLoginMethod` or `forceLoginOrgUUID`), one of the two modes is
+blocked. Ask the human whether such a setting is in place rather than
+assuming.
 
 ### Doctor script caveat
 
@@ -66,7 +64,7 @@ machine should exit `0`.
 `run_onchange_after_25-mise-install.sh.tmpl` runs `mise install` during
 `chezmoi apply`. If either shows `[FAIL]`, run `mise install`, then open
 a fresh shell (or `exec zsh -l`) and re-run the doctor. If `mise` itself
-is missing, Homebrew was probably blocked by IT: get it installed and run
+is missing, Homebrew was probably blocked on this Mac: get it installed and run
 `brew bundle --file="$(chezmoi source-path)/Brewfile"` first. Report a
 persistent failure to the human; do not work around it with a different
 Node installer.
@@ -120,7 +118,7 @@ back to asking the human to run `chezmoi init` themselves interactively.
   closed, this step is already done.
 - **Step 8's glyph section**, for visual confirmation that the Nerd Font
   glyphs render correctly rather than as tofu boxes.
-- **Steps 9 through 14**: every sign-in is a browser login the agent
+- **Steps 9 through 13**: every sign-in is a browser login the agent
   cannot complete on the human's behalf. (An agent may run the
   `claude mcp add` commands in steps 11 and 12, but not the sign-in that
   follows them.)
@@ -131,14 +129,14 @@ back to asking the human to run `chezmoi init` themselves interactively.
   run after Claude Code is first installed, and it will not recur on
   later upgrades. Recognize this and stop to ask a human rather than
   retrying or waiting it out.
-- **Step 10**, entirely: `claude-gw-setup` needs a secret from the
-  human's company (the gateway address and token), typed by the human
-  with hidden input. The agent never sees or handles the token, and stops
+- **Step 10**, entirely, and only if the human uses an LLM gateway:
+  `claude-gw-setup` needs a secret from whoever runs the gateway (the
+  gateway address and token), typed by the human with hidden input. The agent never sees or handles the token, and stops
   and asks the human to run it themselves.
 - **Steps 11 and 12**, additionally: after the `claude mcp add` command,
   the human must sign in to each server by typing `/mcp` inside `claude`
   and following the browser login.
-- **Step 12**, additionally: confirm the human's Atlassian admin has
-  enabled Rovo/MCP before attempting the connection; don't assume it.
-- Any Homebrew package in Step 4 that fails because it needs IT/MDM
-  approval: report which package and why, don't retry it yourself.
+- **Step 12**, additionally: confirm Rovo/MCP is enabled for the human's
+  Atlassian site before attempting the connection; don't assume it.
+- Any Homebrew package in Step 4 that fails because the Mac restricts
+  installs: report which package and why, don't retry it yourself.

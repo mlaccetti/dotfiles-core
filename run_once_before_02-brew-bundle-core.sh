@@ -2,7 +2,7 @@
 # Installs the core (shared) Homebrew tier from this repo's Brewfile.
 #
 # Not using `set -e` for the whole script on purpose: one blocked cask
-# (e.g. corporate/MDM Gatekeeper policy) should not abort the rest of
+# (e.g. Gatekeeper policy on a restricted Mac) should not abort the rest of
 # `chezmoi apply`.
 set -uo pipefail
 
@@ -151,11 +151,11 @@ if "$BREW_BIN" bundle --file="$BUNDLE_FILE"; then
   echo "    Core packages installed/verified."
 else
   echo "    !! One or more packages failed to install."
-  echo "    !! This can happen on a corporate/MDM-managed Mac when a cask"
-  echo "    !! (an app installer) requires IT approval, or when Gatekeeper/"
+  echo "    !! This can happen on a Mac that restricts installs, when a cask"
+  echo "    !! (an app installer) needs approval, or when Gatekeeper/"
   echo "    !! notarization policy blocks it."
   echo "    !! ACTION NEEDED: check the output above for which formula/cask"
-  echo "    !! failed, ask IT for approval if needed, then re-run:"
+  echo "    !! failed, ask whoever manages your Mac for approval if needed, then re-run:"
   echo "    !!   brew bundle --file=\"${BREWFILE}\""
   echo "    Continuing with the rest of the setup."
 fi

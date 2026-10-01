@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # claude-gw-setup: one-time (re-runnable) setup for `claude-gw`.
 #
-# Asks for the company gateway address and token, then writes:
+# Asks for your LLM gateway address and token, then writes:
 #   ~/.config/claude-gw/            (private folder, mode 0700)
 #   ~/.config/claude-gw/token       (the token only, mode 0600)
 #   ~/.config/claude-gw/settings.json (mode 0600; the gateway address and an
@@ -61,7 +61,7 @@ case "$cfg" in
 esac
 
 say "Claude gateway setup"
-say "You'll need the gateway address and token from whoever runs the gateway at your company."
+say "You'll need the gateway address and token from whoever runs your gateway."
 say ""
 
 printf 'Gateway address (starts with https://): ' >&2
@@ -171,7 +171,7 @@ if [ "$check" = yes ]; then
   if [ "$rc" -ne 0 ]; then
     say ""
     say "Your settings are saved, but I couldn't reach $url to test them."
-    say "Check the address, and check that you're on the company network or VPN if the gateway needs it."
+    say "Check the address, and check that you're on the network or VPN the gateway needs, if any."
     say "You can run claude-gw-setup again to fix the address."
     exit 0
   fi
@@ -186,5 +186,5 @@ if [ "$check" = yes ]; then
 fi
 
 say ""
-say "All set. Type claude-gw to use Claude through the company gateway."
-say "Reminder: never type /logout inside claude-gw, because that can sign you out of Enterprise."
+say "All set. Type claude-gw to use Claude through your gateway."
+say "Reminder: never type /logout inside claude-gw, because that can sign you out of your Claude account."
