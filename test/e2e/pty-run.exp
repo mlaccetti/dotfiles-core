@@ -13,6 +13,12 @@
 # disposable test VM and means nothing anywhere else. (The VM also has
 # passwordless sudo, so this is not expected to fire; it is a safety net, and
 # says so in the output when it does.)
+# Refuse to run outside the sandbox VM. guide-steps.sh checks the VM itself and then
+# exports E2E_IN_VM=1; without that marker (or off a VM) this spawns nothing.
+if {![info exists env(E2E_IN_VM)] || $env(E2E_IN_VM) ne "1" || [catch {exec /usr/sbin/sysctl -n kern.hv_vmm_present} e2e_vmm] || $e2e_vmm ne "1"} {
+  puts stderr "[file tail $argv0]: refusing to run: only for the throwaway sandbox VM (run it through guide-steps.sh)"
+  exit 97
+}
 set timeout [lindex $argv 0]
 set cmd [lindex $argv 1]
 set pairs [lrange $argv 2 end]

@@ -31,6 +31,23 @@
 # SC2024: tcpdump runs as root, and its stdout is meant to land in OUR file.
 set -uo pipefail
 
+# Refuse to run anywhere but the throwaway sandbox VM: this script changes the machine
+# it runs on. kern.hv_vmm_present is 1 on a Tart macOS guest and 0 on the host (checked
+# in a sandbox-base clone: guest 1, model VirtualMac2,1; host 0, model Mac14,6), and the
+# VM's only account is "admin". Both must hold.
+e2e_vm_guard() {
+  local vmm user
+  vmm="$(/usr/sbin/sysctl -n kern.hv_vmm_present 2>/dev/null)"
+  user="$(/usr/bin/id -un 2>/dev/null)"
+  if [ "$vmm" != 1 ] || [ "$user" != admin ]; then
+    printf '%s: refusing to run: this script is only for the throwaway sandbox VM (kern.hv_vmm_present=%s, user=%s; want 1 and admin)\n' "${0##*/}" "${vmm:-unset}" "${user:-unset}" >&2
+    exit 97
+  fi
+}
+e2e_vm_guard
+export E2E_IN_VM=1   # the .exp helpers refuse to run without this
+# GUARD_END
+
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCENARIO="${E2E_SCENARIO:-preinstalled}"
 case "$SCENARIO" in preinstalled | fresh) ;; *) echo "guide-steps.sh: unknown E2E_SCENARIO '$SCENARIO'" >&2; exit 2 ;; esac
@@ -120,6 +137,8 @@ vval() { sed -n "s/^V:$1=//p" "$2" | head -1; }     # value printed by "echo V:N
 has()  { grep -Eq -- "$1" "$2"; }                    # regex present in file (no pipe: no SIGPIPE under pipefail)
 count(){ local n; n="$(grep -Ec -- "$1" "$2" 2>/dev/null)"; printf '%s' "${n:-0}"; }
 mode() { stat -f '%Lp' "$1" 2>/dev/null; }
+# with_timeout SECS CMD...   run CMD, killing it after SECS seconds (macOS has no timeout(1)).
+with_timeout() { local secs="$1"; shift; /usr/bin/perl -e 'alarm shift; exec @ARGV or exit 127' "$secs" "$@"; }
 
 STUB_PID=""
 TCPDUMP_PID=""
@@ -145,7 +164,8 @@ fi
 section "Step 2: Install chezmoi"
 g_run s2-chezmoi 'brew install chezmoi'
 [ "$PTY_RC" -eq 0 ] && pass 2 "brew install chezmoi exits 0" || bad 2 "brew install chezmoi" "exit $PTY_RC"
-check 2 "chezmoi is on PATH in a new login shell" "$(/opt/homebrew/bin/chezmoi --version 2>/dev/null | head -1)" test -x /opt/homebrew/bin/chezmoi
+chezmoi_path="$(with_timeout 120 zsh -lic 'command -v chezmoi' </dev/null 2>/dev/null | tail -1)"
+[ "$chezmoi_path" = /opt/homebrew/bin/chezmoi ] && pass 2 "chezmoi is on PATH in a new login shell" "$chezmoi_path $(/opt/homebrew/bin/chezmoi --version 2>/dev/null | head -1)" || bad 2 "chezmoi is on PATH in a new login shell" "zsh -lic 'command -v chezmoi' gave: ${chezmoi_path:-nothing}"
 
 # ================================================================== 3
 section "Step 3: Run the main setup (three prompts answered by expect)"
@@ -183,6 +203,10 @@ if fresh; then
   claude_real="$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' /opt/homebrew/bin/claude)"
   case "$claude_real" in /opt/homebrew/Caskroom/claude-code@latest/*) pass 3 "claude resolves into the claude-code@latest cask" "$claude_real" ;; *) bad 3 "claude resolves into the claude-code@latest cask" "$claude_real" ;; esac
   [ ! -e "$HOME/.local/bin/claude" ] && pass 3 "no native-installer claude at ~/.local/bin/claude" || bad 3 "a second claude exists at ~/.local/bin/claude"
+  # The other places a second Claude Code install can live (the old `claude migrate-installer`
+  # location and the native installer's version store).
+  [ ! -e "$HOME/.claude/local/claude" ] && pass 3 "no second claude at ~/.claude/local/claude" || bad 3 "a second claude exists at ~/.claude/local/claude"
+  [ ! -e "$HOME/.local/share/claude" ] && pass 3 "no claude install at ~/.local/share/claude" || bad 3 "a claude install exists at ~/.local/share/claude"
   if [ -d /Applications/Claude.app ]; then info 3 "Claude desktop app present" "/Applications/Claude.app"; else info 3 "Claude desktop app absent (the guide and Brewfile do not install it)" "no /Applications/Claude.app"; fi
 
   # Gatekeeper. A real user clicks "Open" once for the Homebrew-installed Claude Code
@@ -194,6 +218,7 @@ if fresh; then
   xattr -dr com.apple.quarantine /opt/homebrew/Caskroom/claude-code@latest 2>/dev/null
   q_after="$(xattr -lr /opt/homebrew/Caskroom/claude-code@latest 2>/dev/null | grep -c 'com.apple.quarantine')"
   info 3 "simulated the Gatekeeper Open click for claude (quarantine removed in this VM only)" "quarantined files before: $q_before, after: $q_after"
+  [ "${q_after:-0}" -eq 0 ] && pass 3 "no quarantined file is left under the claude cask" || bad 3 "quarantine flag still set after removal, so the first claude run could be blocked by Gatekeeper" "$q_after file(s)"
   # The other apps are never launched by this harness, so they need no such step.
 else
   alr="$(grep -m1 'Already installed, leaving as is:' "$INIT")"
@@ -349,6 +374,8 @@ PY
     *) bad 7 "setup's connection test credentials" "$cls" ;;
   esac
 else
+  # INFO, not FAIL, on purpose: whether this VM's curl honors CURL_CA_BUNDLE is a property of
+  # the OS image, not of the setup under test, so it must not fail the guide run.
   info 7 "curl in this VM did not honor CURL_CA_BUNDLE; 'answered' path not exercised" "$(tail -3 "$PTY_TXT" | tr '\n' '|')"
 fi
 
@@ -414,10 +441,11 @@ total="$(sed -n 's/^TOTAL=//p' "$GW/summary.txt")"; other="$(sed -n 's/^OTHER=//
 [ "${msgd:-0}" -ge 1 ] && pass 7 "stub received POST /v1/messages with DUMMY credentials" "$msgd request(s) of $total" || bad 7 "stub received POST /v1/messages with DUMMY credentials" "$msgd of $total"
 [ "${other:-1}" -eq 0 ] && pass 7 "stub saw nothing classified OTHER" "OTHER=0" || bad 7 "stub saw a credential classified OTHER" "OTHER=$other"
 has 'host=127\.0\.0\.1' "$GW/summary.txt" && pass 7 "stub saw Host 127.0.0.1 and the /v1/messages path" || bad 7 "stub Host/path" "$(cat "$GW/summary.txt")"
+token_leaks=0
 for f in "$HOME/.claude/settings.json" "$HOME/.claude.json" "$CFG/settings.json"; do
-  if [ -f "$f" ] && grep -Fq -- "$DUMMY_TOKEN" "$f"; then bad 7 "token must not be in $f" "FOUND"; fi
+  if [ -f "$f" ] && grep -Fq -- "$DUMMY_TOKEN" "$f"; then bad 7 "token must not be in $f" "FOUND"; token_leaks=$((token_leaks + 1)); fi
 done
-pass 7 "token is in no settings file (claude-gw, ~/.claude/settings.json, ~/.claude.json)"
+[ "$token_leaks" -eq 0 ] && pass 7 "token is in no settings file (claude-gw, ~/.claude/settings.json, ~/.claude.json)"
 
 # api.anthropic.com: capture-based check (no MITM).
 grep -aE "$CLAUDE_PROC_RE" "$GW/gw.cap" >"$GW/gw-claude.cap"
@@ -543,7 +571,6 @@ nf="$(awk -F'\t' '$2 == "FAIL"' "$OUT/results.tsv" | wc -l | tr -d ' ')"
 np="$(awk -F'\t' '$2 == "PASS"' "$OUT/results.tsv" | wc -l | tr -d ' ')"
 ni="$(awk -F'\t' '$2 == "INFO"' "$OUT/results.tsv" | wc -l | tr -d ' ')"
 awk -F'\t' '$2 == "FAIL" { printf "FAIL  step %s: %s  [%s]\n", $1, $3, $4 }' "$OUT/results.tsv"
-echo "checks: $np passed, $nf failed, $ni informational"
-if [ "$nf" -eq 0 ]; then echo "guide-steps: OK"; exit 0; fi
-echo "guide-steps: FAILED"
-exit 1
+# The last line of summary.txt is the verdict; run.sh requires "guide-steps: OK" in it.
+{ echo "checks: $np passed, $nf failed, $ni informational"; if [ "$nf" -eq 0 ]; then echo "guide-steps: OK"; else echo "guide-steps: FAILED"; fi; } | tee -a "$OUT/summary.txt"
+[ "$nf" -eq 0 ]

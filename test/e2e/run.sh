@@ -84,6 +84,10 @@ mkdir -p "$REPORTS_ROOT" || exit 2
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'run.sh: %s\n' "$*" >&2; exit 2; }
 
+# The preinstalled image is built from the base; if both names were the same VM the build
+# would clone, rename and delete the base.
+[ "$PREINSTALLED_VM" != "$BASE_VM" ] || die "E2E_PREINSTALLED_VM and E2E_BASE_VM are both '$BASE_VM': they must differ"
+
 # ---------------------------------------------------------------- ssh helpers
 # The VM's documented login is admin/admin. SSH_ASKPASS is used instead of
 # sshpass because sshpass lost the password-prompt race on about 1 connection in
@@ -92,7 +96,10 @@ die() { printf 'run.sh: %s\n' "$*" >&2; exit 2; }
 ASKPASS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/e2e-askpass.XXXXXX")" || die "mktemp failed"
 printf '#!/bin/sh\necho admin\n' >"$ASKPASS_DIR/askpass.sh"
 chmod 700 "$ASKPASS_DIR" "$ASKPASS_DIR/askpass.sh"
-SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no
+# -F /dev/null ignores the host's ~/.ssh/config; ForwardAgent=no, IdentitiesOnly=yes and
+# IdentityAgent=none keep the host's ssh agent and keys out of the VM's reach.
+SSH_OPTS=(-F /dev/null -o ForwardAgent=no -o IdentitiesOnly=yes -o IdentityAgent=none
+  -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no
   -o "PreferredAuthentications=password,keyboard-interactive" -o NumberOfPasswordPrompts=1
   -o ConnectTimeout=10 -o ServerAliveInterval=30 -o ServerAliveCountMax=60 -o LogLevel=ERROR)
 vm_ssh() { # IP cmd...
@@ -197,7 +204,7 @@ build_preinstalled() {
 # ---------------------------------------------------------------- 4-6. one scenario
 # run_scenario NAME: sets SCENARIO_RESULT (0 = pass, 1 = a check failed).
 run_scenario() {
-  local scen="$1" source_vm
+  local scen="$1" source_vm guide_ok=0
   case "$scen" in
     preinstalled) build_preinstalled; source_vm="$PREINSTALLED_VM" ;;
     fresh)
@@ -230,11 +237,20 @@ run_scenario() {
   if [ "$SCENARIO_RESULT" -eq 0 ]; then
     log "[$scen] guide-steps.sh (the guide, in order)"
     vm_ssh "$VM_IP" "E2E_SCENARIO=$scen bash ~/e2e/guide-steps.sh" 2>&1 | tee "$REPORT_DIR/guide-steps.log"
-    [ "${PIPESTATUS[0]}" -eq 0 ] || SCENARIO_RESULT=1
+    if [ "${PIPESTATUS[0]}" -eq 0 ]; then guide_ok=1; else SCENARIO_RESULT=1; fi
   fi
 
   log "[$scen] Collecting the report"
-  vm_scp "admin@$VM_IP:e2e-out" "$REPORT_DIR/" >/dev/null 2>&1 || echo "run.sh: could not copy ~/e2e-out back" >&2
+  if ! vm_scp "admin@$VM_IP:e2e-out" "$REPORT_DIR/" >/dev/null 2>&1; then
+    echo "run.sh: could not copy ~/e2e-out back" >&2
+    SCENARIO_RESULT=1
+  fi
+  # An exit 0 from guide-steps.sh is not enough on its own: the report it wrote must be
+  # there and say it finished (a run that exited early, or whose report was lost, is not a pass).
+  if [ "$guide_ok" -eq 1 ]; then
+    [ -s "$REPORT_DIR/e2e-out/covered.txt" ] || { echo "run.sh: guide-steps.sh exited 0 but e2e-out/covered.txt is missing or empty" >&2; SCENARIO_RESULT=1; }
+    grep -qx 'guide-steps: OK' "$REPORT_DIR/e2e-out/summary.txt" 2>/dev/null || { echo "run.sh: guide-steps.sh exited 0 but e2e-out/summary.txt has no 'guide-steps: OK' line" >&2; SCENARIO_RESULT=1; }
+  fi
   if [ -s "$REPORT_DIR/e2e-out/covered.txt" ]; then
     python3 "$HERE/check-guide-coverage.py" --executed "$REPORT_DIR/e2e-out/covered.txt" | tee "$REPORT_DIR/coverage.txt"
     [ "${PIPESTATUS[0]}" -eq 0 ] || SCENARIO_RESULT=1
