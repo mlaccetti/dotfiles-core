@@ -6,9 +6,24 @@
 # PROMPT is matched as an exact substring, so the exact question text is part
 # of what is tested. Everything the command prints goes to stdout. Exit status
 # is the command's own; 124 = timed out, 125 = ended before a prompt appeared.
+#
+# Password prompts: if a command (a pkg-based cask installer, say) stops at a
+# "Password:" prompt, the VM's own throwaway admin password is typed, the way a
+# real user would type theirs at the GUI prompt. That password belongs to the
+# disposable test VM and means nothing anywhere else. (The VM also has
+# passwordless sudo, so this is not expected to fire; it is a safety net, and
+# says so in the output when it does.)
+# Refuse to run outside the sandbox VM. guide-steps.sh checks the VM itself and then
+# exports E2E_IN_VM=1; without that marker (or off a VM) this spawns nothing.
+if {![info exists env(E2E_IN_VM)] || $env(E2E_IN_VM) ne "1" || [catch {exec /usr/sbin/sysctl -n kern.hv_vmm_present} e2e_vmm] || $e2e_vmm ne "1"} {
+  puts stderr "[file tail $argv0]: refusing to run: only for the throwaway sandbox VM (run it through guide-steps.sh)"
+  exit 97
+}
 set timeout [lindex $argv 0]
 set cmd [lindex $argv 1]
 set pairs [lrange $argv 2 end]
+set vm_password "admin"
+set pw_re {(^|\n)Password:[ ]*$}
 set env(TERM) xterm-256color
 # Wide pty so long prompts are not soft-wrapped in the output stream.
 set stty_init "columns 300 rows 50"
@@ -25,11 +40,23 @@ foreach {prompt answer} $pairs {
       sleep 0.4
       send -- "\r"
     }
+    -re $pw_re {
+      puts "\nPTYRUN: answered a password prompt with the VM's throwaway admin password"
+      sleep 0.3
+      send -- "$vm_password\r"
+      exp_continue
+    }
     timeout { puts "\nPTYRUN: timed out waiting for prompt: $prompt"; catch {close}; catch {wait}; exit 124 }
     eof { puts "\nPTYRUN: command ended before prompt: $prompt"; catch {wait}; exit 125 }
   }
 }
 expect {
+  -re $pw_re {
+    puts "\nPTYRUN: answered a password prompt with the VM's throwaway admin password"
+    sleep 0.3
+    send -- "$vm_password\r"
+    exp_continue
+  }
   timeout { puts "\nPTYRUN: timed out waiting for the command to finish"; catch {close}; catch {wait}; exit 124 }
   eof {}
 }

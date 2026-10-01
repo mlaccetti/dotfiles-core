@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# provision-her-state.sh
+# provision-preinstalled.sh
 #
 # Runs INSIDE the Tart VM (Cirrus Labs macOS base image, user "admin").
-# Brings the VM to a Mac where the apps are already installed, before the setup guide runs:
+# Brings the VM to the "preinstalled" starting state, a Mac where the apps are already
+# installed before the setup guide runs:
 #   - Homebrew installed (comes with the Cirrus base image; verified here)
 #   - iTerm2, Visual Studio Code, 1Password, 1Password CLI (op) installed from
 #     vendor downloads, NOT via Homebrew (so `brew list --cask` must not show them)
@@ -17,6 +18,22 @@
 # vendor publishes via update.code.visualstudio.com/api/update; the others were
 # recorded on first download from the vendor URL (trust on first use).
 set -euo pipefail
+
+# Refuse to run anywhere but the throwaway sandbox VM: this script changes the machine
+# it runs on. kern.hv_vmm_present is 1 on a Tart macOS guest and 0 on the host (checked
+# in a sandbox-base clone: guest 1, model VirtualMac2,1; host 0, model Mac14,6), and the
+# VM's only account is "admin". Both must hold.
+e2e_vm_guard() {
+  local vmm user
+  vmm="$(/usr/sbin/sysctl -n kern.hv_vmm_present 2>/dev/null)"
+  user="$(/usr/bin/id -un 2>/dev/null)"
+  if [ "$vmm" != 1 ] || [ "$user" != admin ]; then
+    printf '%s: refusing to run: this script is only for the throwaway sandbox VM (kern.hv_vmm_present=%s, user=%s; want 1 and admin)\n' "${0##*/}" "${vmm:-unset}" "${user:-unset}" >&2
+    exit 97
+  fi
+}
+e2e_vm_guard
+# GUARD_END
 
 # ---------------------------------------------------------------- pins
 ITERM_VERSION="3.7.3"
@@ -169,4 +186,4 @@ echo "op --version:   $(op --version)"
 echo "brew:           $(zsh -lc 'brew --version' | head -1)"
 echo "macOS:          $(sw_vers -productName) $(sw_vers -productVersion) ($(sw_vers -buildVersion)) $(uname -m)"
 echo
-echo "provision-her-state: OK"
+echo "provision-preinstalled: OK"

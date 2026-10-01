@@ -11,6 +11,12 @@
 # check-guide-coverage.py. That script enforces it, so a guide change that adds
 # an untested command fails the harness before the VM is even booted.
 #
+# E2E_SCENARIO picks the starting state (run.sh sets it, prepare-run.sh built it):
+#   preinstalled  iTerm2, VS Code, 1Password, op and Claude Code were already on the Mac, none
+#                 through Homebrew; setup must leave them alone.
+#   fresh         Homebrew only; setup must install all of them through Homebrew, with exactly
+#                 one claude.
+#
 # Only dummy values are used: name "Test User", email test@example.com, a random
 # throwaway gateway token. Nothing signs in to anything. Not `set -e` on purpose:
 # a failed check is recorded and the run continues so one run shows every problem.
@@ -25,7 +31,26 @@
 # SC2024: tcpdump runs as root, and its stdout is meant to land in OUR file.
 set -uo pipefail
 
+# Refuse to run anywhere but the throwaway sandbox VM: this script changes the machine
+# it runs on. kern.hv_vmm_present is 1 on a Tart macOS guest and 0 on the host (checked
+# in a sandbox-base clone: guest 1, model VirtualMac2,1; host 0, model Mac14,6), and the
+# VM's only account is "admin". Both must hold.
+e2e_vm_guard() {
+  local vmm user
+  vmm="$(/usr/sbin/sysctl -n kern.hv_vmm_present 2>/dev/null)"
+  user="$(/usr/bin/id -un 2>/dev/null)"
+  if [ "$vmm" != 1 ] || [ "$user" != admin ]; then
+    printf '%s: refusing to run: this script is only for the throwaway sandbox VM (kern.hv_vmm_present=%s, user=%s; want 1 and admin)\n' "${0##*/}" "${vmm:-unset}" "${user:-unset}" >&2
+    exit 97
+  fi
+}
+e2e_vm_guard
+export E2E_IN_VM=1   # the .exp helpers refuse to run without this
+# GUARD_END
+
 E2E_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCENARIO="${E2E_SCENARIO:-preinstalled}"
+case "$SCENARIO" in preinstalled | fresh) ;; *) echo "guide-steps.sh: unknown E2E_SCENARIO '$SCENARIO'" >&2; exit 2 ;; esac
 OUT="${E2E_OUT:-$HOME/e2e-out}"
 rm -rf "$OUT"
 mkdir -p "$OUT"
@@ -55,6 +80,7 @@ record() { # STEP STATUS DESC [EVIDENCE]
 pass() { record "$1" PASS "$2" "${3:-}"; }
 bad()  { record "$1" FAIL "$2" "${3:-}"; }
 info() { record "$1" INFO "$2" "${3:-}"; }
+fresh() { [ "$SCENARIO" = fresh ]; }
 # check STEP DESC EVIDENCE cmd...   PASS if cmd succeeds
 check() {
   local step="$1" desc="$2" ev="$3"; shift 3
@@ -65,6 +91,25 @@ covers() { printf '%s\n' "$1" >>"$OUT/covered.txt"; }
 
 strip_ansi() { perl -pe 'BEGIN { $| = 1 } s/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a]*(\a|\e\\)//g; s/\r//g'; }
 
+# run_expect RAW TXT expect-args...   run expect with its output sent to the file RAW (not a
+# pipe), show it live ANSI-stripped, and leave the stripped copy in TXT. Sets EXPECT_RC.
+# A file, not a pipe, on purpose: a cask can leave a daemon behind (1Password's
+# `op daemon` did) that inherits expect's stdout, and a pipe held open by a daemon
+# would hang `expect | tee` forever after the command itself had finished.
+run_expect() {
+  local raw="$1" txt="$2"; shift 2
+  : >"$raw"
+  tail -n +1 -f "$raw" 2>/dev/null | strip_ansi &
+  local tail_pids=$!
+  /usr/bin/expect "$@" >"$raw" 2>&1
+  EXPECT_RC=$?
+  sleep 1
+  pkill -P $$ -x tail 2>/dev/null
+  kill "$tail_pids" 2>/dev/null
+  wait "$tail_pids" 2>/dev/null
+  strip_ansi <"$raw" >"$txt"
+}
+
 # pty NAME TIMEOUT CMD [PROMPT ANSWER]...   run CMD in an interactive login zsh on a pty.
 # Sets PTY_RC (exit status) and PTY_TXT (path of the ANSI-stripped transcript).
 pty() {
@@ -72,8 +117,8 @@ pty() {
   PTY_TXT="$OUT/$name.txt"
   printf '\n--- [%s] $ %s\n' "$name" "$cmd"
   # Streamed live (raw transcript kept, stripped copy shown and saved).
-  /usr/bin/expect "$E2E_DIR/pty-run.exp" "$to" "$cmd" "$@" 2>&1 | tee "$OUT/$name.raw" | strip_ansi | tee "$PTY_TXT"
-  PTY_RC="${PIPESTATUS[0]}"
+  run_expect "$OUT/$name.raw" "$PTY_TXT" "$E2E_DIR/pty-run.exp" "$to" "$cmd" "$@"
+  PTY_RC="$EXPECT_RC"
   printf -- '--- [%s] exit %s\n' "$name" "$PTY_RC"
 }
 g_pty() { covers "$3"; pty "$@"; }               # a guide command, with prompts
@@ -84,14 +129,16 @@ session() {
   local name="$1" to="$2"; shift 2
   SESSION_TXT="$OUT/$name.txt"
   printf '\n--- [%s] interactive session\n' "$name"
-  /usr/bin/expect "$E2E_DIR/pty-session.exp" "$to" "$@" 2>&1 | tee "$OUT/$name.raw" | strip_ansi | tee "$SESSION_TXT"
-  SESSION_RC="${PIPESTATUS[0]}"
+  run_expect "$OUT/$name.raw" "$SESSION_TXT" "$E2E_DIR/pty-session.exp" "$to" "$@"
+  SESSION_RC="$EXPECT_RC"
   printf -- '--- [%s] exit %s\n' "$name" "$SESSION_RC"
 }
 vval() { sed -n "s/^V:$1=//p" "$2" | head -1; }     # value printed by "echo V:NAME=..." in a session
 has()  { grep -Eq -- "$1" "$2"; }                    # regex present in file (no pipe: no SIGPIPE under pipefail)
 count(){ local n; n="$(grep -Ec -- "$1" "$2" 2>/dev/null)"; printf '%s' "${n:-0}"; }
 mode() { stat -f '%Lp' "$1" 2>/dev/null; }
+# with_timeout SECS CMD...   run CMD, killing it after SECS seconds (macOS has no timeout(1)).
+with_timeout() { local secs="$1"; shift; /usr/bin/perl -e 'alarm shift; exec @ARGV or exit 127' "$secs" "$@"; }
 
 STUB_PID=""
 TCPDUMP_PID=""
@@ -117,7 +164,8 @@ fi
 section "Step 2: Install chezmoi"
 g_run s2-chezmoi 'brew install chezmoi'
 [ "$PTY_RC" -eq 0 ] && pass 2 "brew install chezmoi exits 0" || bad 2 "brew install chezmoi" "exit $PTY_RC"
-check 2 "chezmoi is on PATH in a new login shell" "$(/opt/homebrew/bin/chezmoi --version 2>/dev/null | head -1)" test -x /opt/homebrew/bin/chezmoi
+chezmoi_path="$(with_timeout 120 zsh -lic 'command -v chezmoi' </dev/null 2>/dev/null | tail -1)"
+[ "$chezmoi_path" = /opt/homebrew/bin/chezmoi ] && pass 2 "chezmoi is on PATH in a new login shell" "$chezmoi_path $(/opt/homebrew/bin/chezmoi --version 2>/dev/null | head -1)" || bad 2 "chezmoi is on PATH in a new login shell" "zsh -lic 'command -v chezmoi' gave: ${chezmoi_path:-nothing}"
 
 # ================================================================== 3
 section "Step 3: Run the main setup (three prompts answered by expect)"
@@ -126,29 +174,72 @@ g_pty s3-init 2400 'chezmoi init --apply https://github.com/mlaccetti/dotfiles-c
 INIT="$PTY_TXT"
 [ "$PTY_RC" -eq 0 ] && pass 3 "chezmoi init --apply exits 0 and all three prompts matched" "exit 0" || bad 3 "chezmoi init --apply" "exit $PTY_RC"
 
-alr="$(grep -m1 'Already installed, leaving as is:' "$INIT")"
-if [ -n "$alr" ]; then
-  # brew's display name for the VS Code cask is "Microsoft Visual Studio Code".
-  list="${alr#*: }, "
-  for n in 'iTerm2' 'Visual Studio Code' '1Password' '1Password CLI' 'Claude Code'; do
-    case "$list" in
-      *"$n, "*) pass 3 "already-installed line lists $n" ;;
-      *) bad 3 "already-installed line lists $n" "$alr" ;;
-    esac
-  done
-else
-  bad 3 "an 'Already installed, leaving as is' line was printed" "absent"
-fi
-
-casks="$(/opt/homebrew/bin/brew list --cask 2>/dev/null)"
-formulae="$(/opt/homebrew/bin/brew list --formula 2>/dev/null)"
-for c in iterm2 visual-studio-code 1password 1password-cli claude-code 'claude-code@latest'; do
-  if printf '%s\n' "$casks" | grep -qx -- "$c"; then bad 3 "cask $c must not be installed by brew" "installed"; fi
-done
-claude_casks="$(printf '%s\n' "$casks" | grep -i claude)"
-[ -z "$claude_casks" ] && pass 3 "no second Claude Code: 'brew list --cask | grep -i claude' is empty" || bad 3 "a Claude cask got installed" "$claude_casks"
+BREW=/opt/homebrew/bin/brew
+casks="$("$BREW" list --cask 2>/dev/null)"
+formulae="$("$BREW" list --formula 2>/dev/null)"
 claude_all="$(zsh -lic 'which -a claude' </dev/null 2>/dev/null | grep '^/' | sort -u | tr '\n' ' ')"
-[ "$claude_all" = "$HOME/.local/bin/claude " ] && pass 3 "which -a claude shows only ~/.local/bin/claude" "$claude_all" || bad 3 "which -a claude" "$claude_all"
+claude_casks="$(printf '%s\n' "$casks" | grep -i claude)"
+if fresh; then
+  # Nothing was installed beforehand, so nothing may be "left alone".
+  if grep -q 'Already installed, leaving as is:' "$INIT"; then bad 3 "no 'Already installed, leaving as is' line on a Mac with nothing installed" "$(grep -m1 'Already installed, leaving as is:' "$INIT")"; else pass 3 "no 'Already installed, leaving as is' line (nothing was installed beforehand)"; fi
+  # Everything the guide says "Installed if missing" must now be there, installed by Homebrew.
+  for c in iterm2 visual-studio-code 1password 1password-cli claude-code@latest font-fira-code-nerd-font; do
+    printf '%s\n' "$casks" | grep -qx -- "$c" && pass 3 "cask $c is installed by Homebrew" || bad 3 "cask $c is installed by Homebrew" "missing from brew list --cask"
+  done
+  for app in 'iTerm.app' 'Visual Studio Code.app' '1Password.app'; do
+    check 3 "/Applications/$app exists" "" test -d "/Applications/$app"
+  done
+  # The app bundles must come from Homebrew's Caskroom, not from somewhere else.
+  for pair in 'iterm2:iTerm.app' 'visual-studio-code:Visual Studio Code.app' '1password:1Password.app'; do
+    c="${pair%%:*}"; app="${pair#*:}"
+    if [ -d "/opt/homebrew/Caskroom/$c" ] && [ -e "/Applications/$app" ]; then pass 3 "$app belongs to the $c cask" "/opt/homebrew/Caskroom/$c"; else bad 3 "$app belongs to the $c cask" "no /opt/homebrew/Caskroom/$c"; fi
+  done
+  op_path="$(zsh -lic 'command -v op' </dev/null 2>/dev/null | tail -1)"
+  op_real="$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "${op_path:-/nonexistent}")"
+  case "$op_real" in /opt/homebrew/Caskroom/1password-cli/*) pass 3 "op is installed by the 1password-cli cask" "$op_path -> $op_real" ;; *) bad 3 "op is installed by the 1password-cli cask" "op=${op_path:-none} -> $op_real" ;; esac
+  # Exactly one claude: one cask, one path on PATH, no native-installer copy.
+  [ "$claude_casks" = 'claude-code@latest' ] && pass 3 "exactly one Claude cask: claude-code@latest" || bad 3 "exactly one Claude cask" "$claude_casks"
+  [ "$claude_all" = '/opt/homebrew/bin/claude ' ] && pass 3 "which -a claude shows exactly one claude, /opt/homebrew/bin/claude" "$claude_all" || bad 3 "which -a claude shows exactly one claude" "$claude_all"
+  claude_real="$(/usr/bin/python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' /opt/homebrew/bin/claude)"
+  case "$claude_real" in /opt/homebrew/Caskroom/claude-code@latest/*) pass 3 "claude resolves into the claude-code@latest cask" "$claude_real" ;; *) bad 3 "claude resolves into the claude-code@latest cask" "$claude_real" ;; esac
+  [ ! -e "$HOME/.local/bin/claude" ] && pass 3 "no native-installer claude at ~/.local/bin/claude" || bad 3 "a second claude exists at ~/.local/bin/claude"
+  # The other places a second Claude Code install can live (the old `claude migrate-installer`
+  # location and the native installer's version store).
+  [ ! -e "$HOME/.claude/local/claude" ] && pass 3 "no second claude at ~/.claude/local/claude" || bad 3 "a second claude exists at ~/.claude/local/claude"
+  [ ! -e "$HOME/.local/share/claude" ] && pass 3 "no claude install at ~/.local/share/claude" || bad 3 "a claude install exists at ~/.local/share/claude"
+  if [ -d /Applications/Claude.app ]; then info 3 "Claude desktop app present" "/Applications/Claude.app"; else info 3 "Claude desktop app absent (the guide and Brewfile do not install it)" "no /Applications/Claude.app"; fi
+
+  # Gatekeeper. A real user clicks "Open" once for the Homebrew-installed Claude Code
+  # (Step 6 of the guide). This SIMULATES that click: it removes the quarantine flag from
+  # the installed claude, inside this throwaway VM only, after setup has run and before
+  # the first `claude` command below. It never runs outside the sandbox, and it is not
+  # part of the guide.
+  q_before="$(xattr -lr /opt/homebrew/Caskroom/claude-code@latest 2>/dev/null | grep -c 'com.apple.quarantine')"
+  xattr -dr com.apple.quarantine /opt/homebrew/Caskroom/claude-code@latest 2>/dev/null
+  q_after="$(xattr -lr /opt/homebrew/Caskroom/claude-code@latest 2>/dev/null | grep -c 'com.apple.quarantine')"
+  info 3 "simulated the Gatekeeper Open click for claude (quarantine removed in this VM only)" "quarantined files before: $q_before, after: $q_after"
+  [ "${q_after:-0}" -eq 0 ] && pass 3 "no quarantined file is left under the claude cask" || bad 3 "quarantine flag still set after removal, so the first claude run could be blocked by Gatekeeper" "$q_after file(s)"
+  # The other apps are never launched by this harness, so they need no such step.
+else
+  alr="$(grep -m1 'Already installed, leaving as is:' "$INIT")"
+  if [ -n "$alr" ]; then
+    # brew's display name for the VS Code cask is "Microsoft Visual Studio Code".
+    list="${alr#*: }, "
+    for n in 'iTerm2' 'Visual Studio Code' '1Password' '1Password CLI' 'Claude Code'; do
+      case "$list" in
+        *"$n, "*) pass 3 "already-installed line lists $n" ;;
+        *) bad 3 "already-installed line lists $n" "$alr" ;;
+      esac
+    done
+  else
+    bad 3 "an 'Already installed, leaving as is' line was printed" "absent"
+  fi
+  for c in iterm2 visual-studio-code 1password 1password-cli claude-code 'claude-code@latest'; do
+    if printf '%s\n' "$casks" | grep -qx -- "$c"; then bad 3 "cask $c must not be installed by brew" "installed"; fi
+  done
+  [ -z "$claude_casks" ] && pass 3 "no second Claude Code: 'brew list --cask | grep -i claude' is empty" || bad 3 "a Claude cask got installed" "$claude_casks"
+  [ "$claude_all" = "$HOME/.local/bin/claude " ] && pass 3 "which -a claude shows only ~/.local/bin/claude" "$claude_all" || bad 3 "which -a claude" "$claude_all"
+fi
 
 dups="$(grep -E '^(==> )?Installing ' "$INIT" | sort | uniq -d)"
 [ -z "$dups" ] && pass 3 "nothing was installed twice" || bad 3 "duplicate install lines" "$dups"
@@ -174,14 +265,6 @@ g_run s3-gitemail 'git config --global user.email'
 
 check 3 "iTerm2 Dynamic Profile file landed" "$ITERM_PROFILE" test -s "$ITERM_PROFILE"
 
-guid="$(plutil -extract Profiles.0.Guid raw -o - "$ITERM_PROFILE" 2>/dev/null)"
-default_guid="$(defaults read com.googlecode.iterm2 'Default Bookmark Guid' 2>/dev/null)"
-if [ -n "$guid" ] && [ "$guid" = "$default_guid" ]; then
-  pass 3 "iTerm2 default profile is Anthropic (run_once_after_10 set it; iTerm2 not running)" "Default Bookmark Guid = $default_guid"
-else
-  bad 3 "iTerm2 default profile is Anthropic" "profile Guid='$guid' Default Bookmark Guid='$default_guid'"
-fi
-
 trace="$(count 'Traceback|panic:|goroutine [0-9]|[Ss]tack trace|unbound variable|syntax error|Segmentation fault|command not found' "$INIT")"
 [ "$trace" -eq 0 ] && pass 3 "no stack traces or shell errors in the output" || bad 3 "stack traces or shell errors in the output" "$(grep -E 'Traceback|panic:|goroutine [0-9]|[Ss]tack trace|unbound variable|syntax error|Segmentation fault|command not found' "$INIT" | head -3 | tr '\n' '|')"
 warnlines="$(grep -E '^\s*!!|Error:|error:' "$INIT" | head -12)"
@@ -202,24 +285,38 @@ session s4-restart 180 '!exec zsh -l' \
 S4="$SESSION_TXT"
 [ -n "$(vval ZSH_CUSTOM "$S4")" ] && pass 4 "\$ZSH_CUSTOM is set in the new shell" "$(vval ZSH_CUSTOM "$S4")" || bad 4 "\$ZSH_CUSTOM is set in the new shell" "empty"
 case "$(vval PROMPT_CONTEXT "$S4")" in *": function") pass 4 "prompt_context is defined (new prompt config loaded)" ;; *) bad 4 "prompt_context is defined" "$(vval PROMPT_CONTEXT "$S4")" ;; esac
-[ "$(vval CLAUDE "$S4")" = "$HOME/.local/bin/claude" ] && pass 4 "claude still resolves after setup replaced ~/.zshrc" "$(vval CLAUDE "$S4")" || bad 4 "claude still resolves after setup replaced ~/.zshrc" "got '$(vval CLAUDE "$S4")'"
+if fresh; then CLAUDE_EXPECT=/opt/homebrew/bin/claude; else CLAUDE_EXPECT="$HOME/.local/bin/claude"; fi
+[ "$(vval CLAUDE "$S4")" = "$CLAUDE_EXPECT" ] && pass 4 "claude resolves in the new shell (setup replaced ~/.zshrc)" "$(vval CLAUDE "$S4")" || bad 4 "claude resolves in the new shell" "got '$(vval CLAUDE "$S4")', want $CLAUDE_EXPECT"
 for t in BREW CHEZMOI BAT FZF; do
   [ -n "$(vval $t "$S4")" ] && pass 4 "$(printf '%s' "$t" | tr A-Z a-z) resolves in the new shell" "$(vval $t "$S4")" || bad 4 "$(printf '%s' "$t" | tr A-Z a-z) resolves in the new shell" "empty"
 done
 [ "$(vval ZSHRC_LOCAL "$S4")" = present ] && pass 4 "~/.zshrc.local was seeded" || bad 4 "~/.zshrc.local was seeded"
 
 # ================================================================== 5
-section "Step 5: Claude Code (no login)"
-pty s5-claude-version 120 'claude --version'
-if [ "$PTY_RC" -eq 0 ] && has '^[0-9]+\.[0-9]+\.[0-9]+' "$PTY_TXT"; then
-  pass 5 "claude --version" "$(head -1 "$PTY_TXT")"
+section "Step 5: iTerm2 look (the default profile, set by setup because iTerm2 is not running)"
+# The guide's menu clicks (Settings > Profiles > Anthropic > Set as Default) are for an iTerm2
+# that was open during setup. Here iTerm2 never runs, so setup writes the default itself.
+guid="$(plutil -extract Profiles.0.Guid raw -o - "$ITERM_PROFILE" 2>/dev/null)"
+default_guid="$(defaults read com.googlecode.iterm2 'Default Bookmark Guid' 2>/dev/null)"
+if [ -n "$guid" ] && [ "$guid" = "$default_guid" ]; then
+  pass 5 "iTerm2 default profile is Anthropic (run_once_after_10 set it; iTerm2 not running)" "Default Bookmark Guid = $default_guid"
 else
-  bad 5 "claude --version" "exit $PTY_RC"
+  bad 5 "iTerm2 default profile is Anthropic" "profile Guid='$guid' Default Bookmark Guid='$default_guid'"
 fi
-info 5 "'claude' sign-in and /status skipped" "needs a real Claude account and a browser"
+info 5 "the Settings menu clicks themselves skipped" "iTerm2 never runs in the VM"
 
 # ================================================================== 6
-section "Step 6: Gateway, against a local stub"
+section "Step 6: Claude Code (no login)"
+pty s5-claude-version 120 'claude --version'
+if [ "$PTY_RC" -eq 0 ] && has '^[0-9]+\.[0-9]+\.[0-9]+' "$PTY_TXT"; then
+  pass 6 "claude --version" "$(head -1 "$PTY_TXT")"
+else
+  bad 6 "claude --version" "exit $PTY_RC"
+fi
+info 6 "'claude' sign-in and /status skipped" "needs a real Claude account and a browser"
+
+# ================================================================== 7
+section "Step 7: Gateway (optional), against a local stub"
 GW="$OUT/gw"
 mkdir -p "$GW"
 cat >"$GW/openssl.cnf" <<'CNF'
@@ -235,7 +332,7 @@ basicConstraints = CA:TRUE
 CNF
 /usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 2 -config "$GW/openssl.cnf" \
   -keyout "$GW/key.pem" -out "$GW/cert.pem" >/dev/null 2>&1
-check 6 "self-signed cert for 127.0.0.1 generated in the VM" "$GW/cert.pem" test -s "$GW/cert.pem"
+check 7 "self-signed cert for 127.0.0.1 generated in the VM" "$GW/cert.pem" test -s "$GW/cert.pem"
 
 STUB_DUMMY_TOKEN="$DUMMY_TOKEN" nohup /usr/bin/python3 "$E2E_DIR/stub-gateway.py" \
   --cert "$GW/cert.pem" --key "$GW/key.pem" --log "$GW/requests.jsonl" --port-file "$GW/port" \
@@ -243,29 +340,29 @@ STUB_DUMMY_TOKEN="$DUMMY_TOKEN" nohup /usr/bin/python3 "$E2E_DIR/stub-gateway.py
 STUB_PID=$!
 for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do [ -s "$GW/port" ] && break; sleep 0.5; done
 PORT="$(cat "$GW/port" 2>/dev/null)"
-[ -n "$PORT" ] && pass 6 "stub gateway is listening" "https://127.0.0.1:$PORT" || bad 6 "stub gateway is listening" "$(cat "$GW/stub.out")"
+[ -n "$PORT" ] && pass 7 "stub gateway is listening" "https://127.0.0.1:$PORT" || bad 7 "stub gateway is listening" "$(cat "$GW/stub.out")"
 GWURL="https://127.0.0.1:$PORT"
 
 # 6a. setup with the self-signed cert untrusted: only "couldn't reach", settings still saved.
 g_pty s6-setup 120 'claude-gw-setup' \
   "$P_GWURL" "$GWURL" "$P_GWTOKEN" "$DUMMY_TOKEN" "$P_GWMODELS" 'n' "$P_GWTEST" ''
-[ "$PTY_RC" -eq 0 ] && pass 6 "claude-gw-setup finishes (exit 0) with an untrusted cert" || bad 6 "claude-gw-setup" "exit $PTY_RC"
-if has "couldn't reach" "$PTY_TXT"; then pass 6 "untrusted cert only gives the 'couldn't reach' message, settings saved"; else bad 6 "expected the 'couldn't reach' message" "$(tail -3 "$PTY_TXT" | tr '\n' '|')"; fi
+[ "$PTY_RC" -eq 0 ] && pass 7 "claude-gw-setup finishes (exit 0) with an untrusted cert" || bad 7 "claude-gw-setup" "exit $PTY_RC"
+if has "couldn't reach" "$PTY_TXT"; then pass 7 "untrusted cert only gives the 'couldn't reach' message, settings saved"; else bad 7 "expected the 'couldn't reach' message" "$(tail -3 "$PTY_TXT" | tr '\n' '|')"; fi
 CFG="$HOME/.config/claude-gw"
-[ "$(mode "$CFG")" = 700 ] && pass 6 "~/.config/claude-gw is mode 700" || bad 6 "~/.config/claude-gw mode" "$(mode "$CFG")"
-[ "$(mode "$CFG/token")" = 600 ] && pass 6 "token file is mode 600" || bad 6 "token file mode" "$(mode "$CFG/token")"
-[ "$(mode "$CFG/settings.json")" = 600 ] && pass 6 "settings.json is mode 600" || bad 6 "settings.json mode" "$(mode "$CFG/settings.json")"
-[ "$(cat "$CFG/token" 2>/dev/null)" = "$DUMMY_TOKEN" ] && pass 6 "token file holds the token that was typed" || bad 6 "token file content"
-if grep -Fq -- "$DUMMY_TOKEN" "$CFG/settings.json"; then bad 6 "token is not in claude-gw settings.json" "FOUND"; else pass 6 "token is not in claude-gw settings.json"; fi
+[ "$(mode "$CFG")" = 700 ] && pass 7 "~/.config/claude-gw is mode 700" || bad 7 "~/.config/claude-gw mode" "$(mode "$CFG")"
+[ "$(mode "$CFG/token")" = 600 ] && pass 7 "token file is mode 600" || bad 7 "token file mode" "$(mode "$CFG/token")"
+[ "$(mode "$CFG/settings.json")" = 600 ] && pass 7 "settings.json is mode 600" || bad 7 "settings.json mode" "$(mode "$CFG/settings.json")"
+[ "$(cat "$CFG/token" 2>/dev/null)" = "$DUMMY_TOKEN" ] && pass 7 "token file holds the token that was typed" || bad 7 "token file content"
+if grep -Fq -- "$DUMMY_TOKEN" "$CFG/settings.json"; then bad 7 "token is not in claude-gw settings.json" "FOUND"; else pass 7 "token is not in claude-gw settings.json"; fi
 n_after_setup="$(wc -l <"$GW/requests.jsonl" | tr -d ' ')"
-[ "$n_after_setup" -eq 0 ] && pass 6 "stub saw no request from the failed TLS test" || info 6 "stub saw requests during setup" "$n_after_setup"
+[ "$n_after_setup" -eq 0 ] && pass 7 "stub saw no request from the failed TLS test" || info 7 "stub saw requests during setup" "$n_after_setup"
 
 # 6b. setup again with the cert trusted by curl: the "answered" path must send the dummy token in both headers.
 covers 'claude-gw-setup'
 pty s6-setup-trusted 120 "SSL_CERT_FILE='$GW/cert.pem' CURL_CA_BUNDLE='$GW/cert.pem' claude-gw-setup" \
   "$P_GWURL" "$GWURL" "$P_GWTOKEN" "$DUMMY_TOKEN" "$P_GWMODELS" 'n' "$P_GWTEST" ''
 if has 'The gateway answered' "$PTY_TXT"; then
-  pass 6 "trusted cert: 'The gateway answered' and 'All set'" "$(grep -m1 'The gateway answered' "$PTY_TXT")"
+  pass 7 "trusted cert: 'The gateway answered' and 'All set'" "$(grep -m1 'The gateway answered' "$PTY_TXT")"
   cls="$(/usr/bin/python3 - "$GW/requests.jsonl" <<'PY'
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1]) if l.strip()]
@@ -273,11 +370,13 @@ print(" ".join("%s x-api-key=%s authorization=%s" % (r["path"], r["x-api-key"], 
 PY
 )"
   case "$cls" in
-    *"x-api-key=DUMMY authorization=DUMMY"*) pass 6 "setup's connection test sent the dummy token in both headers" "$cls" ;;
-    *) bad 6 "setup's connection test credentials" "$cls" ;;
+    *"x-api-key=DUMMY authorization=DUMMY"*) pass 7 "setup's connection test sent the dummy token in both headers" "$cls" ;;
+    *) bad 7 "setup's connection test credentials" "$cls" ;;
   esac
 else
-  info 6 "curl in this VM did not honor CURL_CA_BUNDLE; 'answered' path not exercised" "$(tail -3 "$PTY_TXT" | tr '\n' '|')"
+  # INFO, not FAIL, on purpose: whether this VM's curl honors CURL_CA_BUNDLE is a property of
+  # the OS image, not of the setup under test, so it must not fail the guide run.
+  info 7 "curl in this VM did not honor CURL_CA_BUNDLE; 'answered' path not exercised" "$(tail -3 "$PTY_TXT" | tr '\n' '|')"
 fi
 
 # 6c. claude-gw itself, with a packet capture around it.
@@ -291,7 +390,8 @@ non_loopback() { grep -v '^127\.0\.0\.1:\|^::1:'; }
 # to Apple hosts in the background (OCSP, iCloud), which must not count against
 # claude. A native Claude Code process is named after its versioned file, not
 # "claude", so resolve the symlink to get the name tcpdump prints.
-CLAUDE_PROC="$(/usr/bin/python3 -c 'import os, sys; print(os.path.basename(os.path.realpath(sys.argv[1])))' "$HOME/.local/bin/claude")"
+CLAUDE_PATH="$(zsh -lic 'command -v claude' </dev/null 2>/dev/null | tail -1)"
+CLAUDE_PROC="$(/usr/bin/python3 -c 'import os, sys; print(os.path.basename(os.path.realpath(sys.argv[1])))' "$CLAUDE_PATH")"
 CLAUDE_PROC_RE="proc ${CLAUDE_PROC//./\\.}:"
 capture_start() { # NAME
   sudo -n /usr/sbin/tcpdump -i any -n -l -tt -k NP "$DNSQ" >"$GW/$1.cap" 2>&1 &
@@ -311,9 +411,9 @@ capture_stop
 control_curl_syn="$(grep -a 'proc curl:' "$GW/control.cap" | syn_dests | non_loopback | tr '\n' ' ')"
 control_curl_dns="$(grep -a 'proc mDNSResponder' "$GW/control.cap" | grep -ac 'eproc curl:')"
 if [ -n "$control_curl_syn" ]; then
-  pass 6 "control: the capture attributes a plain curl to api.anthropic.com to curl" "curl SYN to ${control_curl_syn}; DNS lookups made for curl: $control_curl_dns"
+  pass 7 "control: the capture attributes a plain curl to api.anthropic.com to curl" "curl SYN to ${control_curl_syn}; DNS lookups made for curl: $control_curl_dns"
 else
-  info 6 "control: no SYN attributed to curl (no outbound network from the VM?)" "$(head -3 "$GW/control.cap" | tr '\n' '|')"
+  info 7 "control: no SYN attributed to curl (no outbound network from the VM?)" "$(head -3 "$GW/control.cap" | tr '\n' '|')"
 fi
 
 before="$(wc -l <"$GW/requests.jsonl" | tr -d ' ')"
@@ -322,8 +422,8 @@ capture_start gw
 pty s6-gw 300 "NODE_EXTRA_CA_CERTS='$GW/cert.pem' claude-gw -p 'say ok'"
 GW_RC="$PTY_RC"
 capture_stop
-[ "$GW_RC" -eq 0 ] && pass 6 "claude-gw -p 'say ok' exits 0" || bad 6 "claude-gw -p 'say ok'" "exit $GW_RC: $(tail -3 "$PTY_TXT" | tr '\n' '|')"
-has '(^|[^a-z])ok' "$PTY_TXT" && pass 6 "claude-gw printed the stub's reply" || bad 6 "claude-gw printed the stub's reply" "$(tail -2 "$PTY_TXT" | tr '\n' '|')"
+[ "$GW_RC" -eq 0 ] && pass 7 "claude-gw -p 'say ok' exits 0" || bad 7 "claude-gw -p 'say ok'" "exit $GW_RC: $(tail -3 "$PTY_TXT" | tr '\n' '|')"
+has '(^|[^a-z])ok' "$PTY_TXT" && pass 7 "claude-gw printed the stub's reply" || bad 7 "claude-gw printed the stub's reply" "$(tail -2 "$PTY_TXT" | tr '\n' '|')"
 
 # What did the stub see? Only classifications are ever stored.
 /usr/bin/python3 - "$GW/requests.jsonl" "$before" >"$GW/summary.txt" <<'PY'
@@ -338,13 +438,14 @@ for k, v in sorted(c.items()):
 PY
 echo "--- stub classifications for the claude-gw run"; cat "$GW/summary.txt"
 total="$(sed -n 's/^TOTAL=//p' "$GW/summary.txt")"; other="$(sed -n 's/^OTHER=//p' "$GW/summary.txt")"; msgd="$(sed -n 's/^MSG_DUMMY=//p' "$GW/summary.txt")"
-[ "${msgd:-0}" -ge 1 ] && pass 6 "stub received POST /v1/messages with DUMMY credentials" "$msgd request(s) of $total" || bad 6 "stub received POST /v1/messages with DUMMY credentials" "$msgd of $total"
-[ "${other:-1}" -eq 0 ] && pass 6 "stub saw nothing classified OTHER" "OTHER=0" || bad 6 "stub saw a credential classified OTHER" "OTHER=$other"
-has 'host=127\.0\.0\.1' "$GW/summary.txt" && pass 6 "stub saw Host 127.0.0.1 and the /v1/messages path" || bad 6 "stub Host/path" "$(cat "$GW/summary.txt")"
+[ "${msgd:-0}" -ge 1 ] && pass 7 "stub received POST /v1/messages with DUMMY credentials" "$msgd request(s) of $total" || bad 7 "stub received POST /v1/messages with DUMMY credentials" "$msgd of $total"
+[ "${other:-1}" -eq 0 ] && pass 7 "stub saw nothing classified OTHER" "OTHER=0" || bad 7 "stub saw a credential classified OTHER" "OTHER=$other"
+has 'host=127\.0\.0\.1' "$GW/summary.txt" && pass 7 "stub saw Host 127.0.0.1 and the /v1/messages path" || bad 7 "stub Host/path" "$(cat "$GW/summary.txt")"
+token_leaks=0
 for f in "$HOME/.claude/settings.json" "$HOME/.claude.json" "$CFG/settings.json"; do
-  if [ -f "$f" ] && grep -Fq -- "$DUMMY_TOKEN" "$f"; then bad 6 "token must not be in $f" "FOUND"; fi
+  if [ -f "$f" ] && grep -Fq -- "$DUMMY_TOKEN" "$f"; then bad 7 "token must not be in $f" "FOUND"; token_leaks=$((token_leaks + 1)); fi
 done
-pass 6 "token is in no settings file (claude-gw, ~/.claude/settings.json, ~/.claude.json)"
+[ "$token_leaks" -eq 0 ] && pass 7 "token is in no settings file (claude-gw, ~/.claude/settings.json, ~/.claude.json)"
 
 # api.anthropic.com: capture-based check (no MITM).
 grep -aE "$CLAUDE_PROC_RE" "$GW/gw.cap" >"$GW/gw-claude.cap"
@@ -353,24 +454,24 @@ gw_local_syn="$(syn_dests <"$GW/gw-claude.cap" | grep -c "^127\.0\.0\.1:$PORT\$"
 gw_claude_dns="$(grep -aEc '(A|AAAA|HTTPS)\? ' "$GW/gw-claude.cap")"
 anthropic_dns="$(grep -aE '(A|AAAA|HTTPS)\? ' "$GW/gw.cap" | grep -Eic 'anthropic\.com|claude\.ai|claude\.com')"
 if [ "${gw_local_syn:-0}" -ge 1 ]; then
-  pass 6 "the capture attributes claude-gw's own connections to it (process $CLAUDE_PROC)" "connections to the stub: $gw_local_syn"
+  pass 7 "the capture attributes claude-gw's own connections to it (process $CLAUDE_PROC)" "connections to the stub: $gw_local_syn"
 else
-  bad 6 "the capture saw no connection from claude-gw to the stub, so its attribution cannot be trusted" "process name '$CLAUDE_PROC'"
+  bad 7 "the capture saw no connection from claude-gw to the stub, so its attribution cannot be trusted" "process name '$CLAUDE_PROC'"
 fi
 if [ -z "$gw_remote_syn" ] && [ "${gw_claude_dns:-0}" -eq 0 ]; then
-  pass 6 "claude-gw made no outbound connection and no DNS lookup (so none to api.anthropic.com)" "connections to non-loopback addresses: 0"
+  pass 7 "claude-gw made no outbound connection and no DNS lookup (so none to api.anthropic.com)" "connections to non-loopback addresses: 0"
 else
-  bad 6 "claude-gw reached beyond the stub" "SYN to: ${gw_remote_syn:-none}; DNS lookups: $gw_claude_dns"
+  bad 7 "claude-gw reached beyond the stub" "SYN to: ${gw_remote_syn:-none}; DNS lookups: $gw_claude_dns"
 fi
-[ "${anthropic_dns:-0}" -eq 0 ] && pass 6 "no process looked up anthropic.com, claude.ai or claude.com while claude-gw ran" || bad 6 "an Anthropic hostname was looked up during claude-gw" "$anthropic_dns"
-info 6 "background traffic from macOS itself during the run (not claude)" "$(grep -av "$CLAUDE_PROC_RE" "$GW/gw.cap" | syn_dests | non_loopback | tr '\n' ' ')"
+[ "${anthropic_dns:-0}" -eq 0 ] && pass 7 "no process looked up anthropic.com, claude.ai or claude.com while claude-gw ran" || bad 7 "an Anthropic hostname was looked up during claude-gw" "$anthropic_dns"
+info 7 "background traffic from macOS itself during the run (not claude)" "$(grep -av "$CLAUDE_PROC_RE" "$GW/gw.cap" | syn_dests | non_loopback | tr '\n' ' ')"
 
-# ================================================================== 7
-section "Step 7: Connect tools"
+# ================================================================== 8
+section "Step 8: Connect your tools"
 g_run s7-linear 'claude mcp add --transport http linear-server --scope user https://mcp.linear.app/mcp'
-[ "$PTY_RC" -eq 0 ] && pass 7 "linear-server added (exit 0)" || bad 7 "claude mcp add linear-server" "exit $PTY_RC"
+[ "$PTY_RC" -eq 0 ] && pass 8 "linear-server added (exit 0)" || bad 8 "claude mcp add linear-server" "exit $PTY_RC"
 g_run s7-atlassian 'claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp'
-[ "$PTY_RC" -eq 0 ] && pass 7 "atlassian added (exit 0)" || bad 7 "claude mcp add atlassian" "exit $PTY_RC"
+[ "$PTY_RC" -eq 0 ] && pass 8 "atlassian added (exit 0)" || bad 8 "claude mcp add atlassian" "exit $PTY_RC"
 
 /usr/bin/python3 - >"$OUT/s7-claudejson.txt" <<'PY'
 import json, os
@@ -382,73 +483,86 @@ proj = [p for p, v in d.get("projects", {}).items() if v.get("mcpServers")]
 print("PROJECT_SCOPED=%d" % len(proj))
 PY
 cat "$OUT/s7-claudejson.txt"
-has '^USER linear-server=https://mcp.linear.app/mcp$' "$OUT/s7-claudejson.txt" && pass 7 "linear-server is in ~/.claude.json at user scope" || bad 7 "linear-server at user scope" "$(cat "$OUT/s7-claudejson.txt" | tr '\n' '|')"
-has '^USER atlassian=https://mcp.atlassian.com/v2/mcp$' "$OUT/s7-claudejson.txt" && pass 7 "atlassian is in ~/.claude.json at user scope" || bad 7 "atlassian at user scope" "$(cat "$OUT/s7-claudejson.txt" | tr '\n' '|')"
-has '^PROJECT_SCOPED=0$' "$OUT/s7-claudejson.txt" && pass 7 "nothing was saved for one folder only" || bad 7 "a server was saved project-scoped"
+has '^USER linear-server=https://mcp.linear.app/mcp$' "$OUT/s7-claudejson.txt" && pass 8 "linear-server is in ~/.claude.json at user scope" || bad 8 "linear-server at user scope" "$(cat "$OUT/s7-claudejson.txt" | tr '\n' '|')"
+has '^USER atlassian=https://mcp.atlassian.com/v2/mcp$' "$OUT/s7-claudejson.txt" && pass 8 "atlassian is in ~/.claude.json at user scope" || bad 8 "atlassian at user scope" "$(cat "$OUT/s7-claudejson.txt" | tr '\n' '|')"
+has '^PROJECT_SCOPED=0$' "$OUT/s7-claudejson.txt" && pass 8 "nothing was saved for one folder only" || bad 8 "a server was saved project-scoped"
 
 mkdir -p "$HOME/e2e-elsewhere"
 covers 'claude mcp list'
 pty s7-list 300 'cd "$HOME/e2e-elsewhere" && claude mcp list'
 if has 'linear-server' "$PTY_TXT" && has 'atlassian' "$PTY_TXT"; then
-  pass 7 "claude mcp list from a different folder shows both servers (scope fix works)" "$(grep -E 'linear-server|atlassian' "$PTY_TXT" | tr '\n' '|')"
+  pass 8 "claude mcp list from a different folder shows both servers (scope fix works)" "$(grep -E 'linear-server|atlassian' "$PTY_TXT" | tr '\n' '|')"
 else
-  bad 7 "claude mcp list from a different folder shows both servers" "$(tail -4 "$PTY_TXT" | tr '\n' '|')"
+  bad 8 "claude mcp list from a different folder shows both servers" "$(tail -4 "$PTY_TXT" | tr '\n' '|')"
 fi
-info 7 "OAuth sign-in (/mcp) and gh auth login skipped" "each needs a browser"
+info 8 "OAuth sign-in (/mcp) and gh auth login skipped" "each needs a browser"
 
 pty s7-gh 60 'gh --version'
-[ "$PTY_RC" -eq 0 ] && pass 7 "gh --version" "$(head -1 "$PTY_TXT")" || bad 7 "gh --version" "exit $PTY_RC"
+[ "$PTY_RC" -eq 0 ] && pass 8 "gh --version" "$(head -1 "$PTY_TXT")" || bad 8 "gh --version" "exit $PTY_RC"
 pty s7-npm 60 'npm --version'
-[ "$PTY_RC" -eq 0 ] && pass 7 "npm --version (Node via mise works)" "$(tail -1 "$PTY_TXT")" || bad 7 "npm --version" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
+[ "$PTY_RC" -eq 0 ] && pass 8 "npm --version (Node via mise works)" "$(tail -1 "$PTY_TXT")" || bad 8 "npm --version" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
 
-# ================================================================== 8 (guide step 9: health check)
-section "Step 8: Health check (doctor.sh)"
+# ================================================================== 9
+section "Step 9: Health check (doctor.sh)"
 g_pty s9-doctor 900 'bash "$(chezmoi source-path)/bin/doctor.sh"'
 DOC1="$PTY_TXT"
-[ "$PTY_RC" -eq 0 ] && pass 8 "doctor.sh exits 0" || bad 8 "doctor.sh exit status" "exit $PTY_RC"
+[ "$PTY_RC" -eq 0 ] && pass 9 "doctor.sh exits 0" || bad 9 "doctor.sh exit status" "exit $PTY_RC"
 nfail="$(count '\[FAIL\]' "$DOC1")"; nwarn="$(count '\[WARN\]' "$DOC1")"; npass="$(count '\[PASS\]' "$DOC1")"
-[ "$nfail" -eq 0 ] && pass 8 "doctor.sh reports zero FAIL" "PASS=$npass WARN=$nwarn FAIL=$nfail" || bad 8 "doctor.sh reports FAIL lines" "$(grep -A1 '\[FAIL\]' "$DOC1" | head -8 | tr '\n' '|')"
-grep '\[WARN\]' "$DOC1" | while IFS= read -r l; do info 8 "doctor WARN (judge against the scenario)" "$l"; done
-# The guide (Step 9) tells you to expect exactly these WARNs: apps that were already installed,
+[ "$nfail" -eq 0 ] && pass 9 "doctor.sh reports zero FAIL" "PASS=$npass WARN=$nwarn FAIL=$nfail" || bad 9 "doctor.sh reports FAIL lines" "$(grep -A1 '\[FAIL\]' "$DOC1" | head -8 | tr '\n' '|')"
+grep '\[WARN\]' "$DOC1" | while IFS= read -r l; do info 9 "doctor WARN (judge against the scenario)" "$l"; done
+# The guide (Step 9) tells you to expect WARNs only for apps that were on the Mac before setup,
 # reported as present but not managed by Homebrew. Anything else is a real finding.
-unexpected_warn="$(grep '\[WARN\]' "$DOC1" | grep -v -F \
-  -e "'iterm2' is present but not brew-managed" \
-  -e "'1password' is present but not brew-managed" \
-  -e "'1password-cli' is present but not brew-managed" \
-  -e "'visual-studio-code' is present but not brew-managed" \
-  -e "Claude Code is installed outside Homebrew" || true)"
-[ -z "$unexpected_warn" ] && pass 8 "every doctor WARN is one the guide tells you to expect" "$nwarn WARN, all for pre-installed apps" || bad 8 "doctor WARN the guide does not mention" "$(printf '%s' "$unexpected_warn" | head -5 | tr '\n' '|')"
+if fresh; then
+  # Nothing was there before setup, so every app is brew-managed and no WARN is expected.
+  unexpected_warn="$(grep '\[WARN\]' "$DOC1" || true)"
+  [ -z "$unexpected_warn" ] && pass 9 "no doctor WARN (nothing was installed beforehand, so none is expected)" "WARN=$nwarn" || bad 9 "doctor WARN on a fresh Mac" "$(printf '%s' "$unexpected_warn" | head -5 | tr '\n' '|')"
+else
+  unexpected_warn="$(grep '\[WARN\]' "$DOC1" | grep -v -F \
+    -e "'iterm2' is present but not brew-managed" \
+    -e "'1password' is present but not brew-managed" \
+    -e "'1password-cli' is present but not brew-managed" \
+    -e "'visual-studio-code' is present but not brew-managed" \
+    -e "Claude Code is installed outside Homebrew" || true)"
+  [ -z "$unexpected_warn" ] && pass 9 "every doctor WARN is one the guide tells you to expect" "$nwarn WARN, all for pre-installed apps" || bad 9 "doctor WARN the guide does not mention" "$(printf '%s' "$unexpected_warn" | head -5 | tr '\n' '|')"
+fi
 
 # ================================================================== glyph check
 section "Glyph check (files only; the visual part cannot be automated)"
 nf="$(ls "$HOME/Library/Fonts" 2>/dev/null | grep -i 'FiraCodeNerdFontMono' | head -3 | tr '\n' ' ')"
-[ -n "$nf" ] && pass 9 "FiraCode Nerd Font Mono files exist" "$nf" || bad 9 "FiraCode Nerd Font Mono files exist" "none"
-if grep -q 'FiraCodeNFM-Reg' "$ITERM_PROFILE" 2>/dev/null; then pass 9 "Anthropic profile references FiraCodeNFM-Reg"; else bad 9 "Anthropic profile references FiraCodeNFM-Reg" "$(grep -o '"Normal Font"[^,]*' "$ITERM_PROFILE" | head -1)"; fi
+[ -n "$nf" ] && pass G "FiraCode Nerd Font Mono files exist" "$nf" || bad G "FiraCode Nerd Font Mono files exist" "none"
+if grep -q 'FiraCodeNFM-Reg' "$ITERM_PROFILE" 2>/dev/null; then pass G "Anthropic profile references FiraCodeNFM-Reg"; else bad G "Anthropic profile references FiraCodeNFM-Reg" "$(grep -o '"Normal Font"[^,]*' "$ITERM_PROFILE" | head -1)"; fi
 
 # ================================================================== troubleshooting commands
 section "Troubleshooting commands from the guide (safe ones)"
 g_run t-mise-install 'mise install'
-[ "$PTY_RC" -eq 0 ] && pass 11 "mise install" "exit 0" || bad 11 "mise install" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
+[ "$PTY_RC" -eq 0 ] && pass T "mise install" "exit 0" || bad T "mise install" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
 g_run t-font-brew 'brew install --cask font-fira-code-nerd-font'
-[ "$PTY_RC" -eq 0 ] && pass 11 "brew install --cask font-fira-code-nerd-font (already installed)" "exit 0" || bad 11 "brew install --cask font-fira-code-nerd-font" "exit $PTY_RC"
+[ "$PTY_RC" -eq 0 ] && pass T "brew install --cask font-fira-code-nerd-font (already installed)" "exit 0" || bad T "brew install --cask font-fira-code-nerd-font" "exit $PTY_RC"
 g_run t-profile-cp 'mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles" && cp "$(chezmoi source-path)/iterm2/Anthropic.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Anthropic.json"'
-if [ "$PTY_RC" -eq 0 ] && cmp -s "$ITERM_PROFILE" "$HOME/.local/share/chezmoi/iterm2/Anthropic.json"; then pass 11 "manual iTerm2 profile copy command works" "identical to source"; else bad 11 "manual iTerm2 profile copy command" "exit $PTY_RC"; fi
+if [ "$PTY_RC" -eq 0 ] && cmp -s "$ITERM_PROFILE" "$HOME/.local/share/chezmoi/iterm2/Anthropic.json"; then pass T "manual iTerm2 profile copy command works" "identical to source"; else bad T "manual iTerm2 profile copy command" "exit $PTY_RC"; fi
 g_run t-echo-shell 'echo $SHELL'
-[ "$PTY_RC" -eq 0 ] && [ "$(tr -d '\n' <"$PTY_TXT")" = /bin/zsh ] && pass 11 "echo \$SHELL prints /bin/zsh" || bad 11 "echo \$SHELL" "$(cat "$PTY_TXT")"
-info 11 "'chsh -s /bin/zsh' skipped" "asks for the account password, and the default shell is already /bin/zsh here"
+[ "$PTY_RC" -eq 0 ] && [ "$(tr -d '\n' <"$PTY_TXT")" = /bin/zsh ] && pass T "echo \$SHELL prints /bin/zsh" || bad T "echo \$SHELL" "$(cat "$PTY_TXT")"
+info T "'chsh -s /bin/zsh' skipped" "asks for the account password, and the default shell is already /bin/zsh here"
 
-# ================================================================== 10 idempotency
-section "Idempotency"
-pty s10-apply 900 'chezmoi apply'
-[ "$PTY_RC" -eq 0 ] && pass 10 "second chezmoi apply exits 0" || bad 10 "second chezmoi apply" "exit $PTY_RC"
+# ================================================================== idempotency
+section "Idempotency (the guide's main setup run a second time)"
+# The guide says the main setup can be run again at any time and asks the three questions again.
+g_pty s10-init 2400 'chezmoi init --apply https://github.com/mlaccetti/dotfiles-core' \
+  "$P_NAME" "$T_NAME" "$P_EMAIL" "$T_EMAIL" "$P_1PASSWORD" 'false'
+[ "$PTY_RC" -eq 0 ] && pass I "second chezmoi init --apply exits 0 and asks the same three questions" "exit 0" || bad I "second chezmoi init --apply" "exit $PTY_RC"
 scripts_rerun="$(count '^==> \[' "$PTY_TXT")"
-[ "$scripts_rerun" -eq 0 ] && pass 10 "no run_once/run_onchange script ran again" || bad 10 "scripts ran again" "$(grep '^==> \[' "$PTY_TXT" | tr '\n' '|')"
+[ "$scripts_rerun" -eq 0 ] && pass I "no run_once/run_onchange script ran again during the second init" || bad I "scripts ran again during the second init" "$(grep '^==> \[' "$PTY_TXT" | tr '\n' '|')"
+[ "$(git config --global user.name)" = "$T_NAME" ] && pass I "git identity unchanged after the second run" || bad I "git identity after the second run"
+pty s10-apply 900 'chezmoi apply'
+[ "$PTY_RC" -eq 0 ] && pass I "second chezmoi apply exits 0" || bad I "second chezmoi apply" "exit $PTY_RC"
+scripts_rerun="$(count '^==> \[' "$PTY_TXT")"
+[ "$scripts_rerun" -eq 0 ] && pass I "no run_once/run_onchange script ran again" || bad I "scripts ran again" "$(grep '^==> \[' "$PTY_TXT" | tr '\n' '|')"
 pty s10-status 120 'chezmoi status'
-if [ "$PTY_RC" -eq 0 ] && [ -z "$(tr -d '[:space:]' <"$PTY_TXT")" ]; then pass 10 "chezmoi status is empty"; else bad 10 "chezmoi status is empty" "$(head -5 "$PTY_TXT" | tr '\n' '|')"; fi
+if [ "$PTY_RC" -eq 0 ] && [ -z "$(tr -d '[:space:]' <"$PTY_TXT")" ]; then pass I "chezmoi status is empty"; else bad I "chezmoi status is empty" "$(head -5 "$PTY_TXT" | tr '\n' '|')"; fi
 pty s10-doctor 900 'bash "$(chezmoi source-path)/bin/doctor.sh"'
 DOC2="$PTY_TXT"
 grep -E '\[(PASS|WARN|FAIL)\]' "$DOC1" >"$OUT/doc1.lines"; grep -E '\[(PASS|WARN|FAIL)\]' "$DOC2" >"$OUT/doc2.lines"
-if [ "$PTY_RC" -eq 0 ] && cmp -s "$OUT/doc1.lines" "$OUT/doc2.lines"; then pass 10 "second doctor.sh run is identical (exit 0, same PASS/WARN/FAIL lines)" "$(wc -l <"$OUT/doc2.lines" | tr -d ' ') lines"; else bad 10 "second doctor.sh run differs" "exit $PTY_RC: $(diff "$OUT/doc1.lines" "$OUT/doc2.lines" | head -4 | tr '\n' '|')"; fi
+if [ "$PTY_RC" -eq 0 ] && cmp -s "$OUT/doc1.lines" "$OUT/doc2.lines"; then pass I "second doctor.sh run is identical (exit 0, same PASS/WARN/FAIL lines)" "$(wc -l <"$OUT/doc2.lines" | tr -d ' ') lines"; else bad I "second doctor.sh run differs" "exit $PTY_RC: $(diff "$OUT/doc1.lines" "$OUT/doc2.lines" | head -4 | tr '\n' '|')"; fi
 
 # ================================================================== summary
 section "SUMMARY"
@@ -457,7 +571,6 @@ nf="$(awk -F'\t' '$2 == "FAIL"' "$OUT/results.tsv" | wc -l | tr -d ' ')"
 np="$(awk -F'\t' '$2 == "PASS"' "$OUT/results.tsv" | wc -l | tr -d ' ')"
 ni="$(awk -F'\t' '$2 == "INFO"' "$OUT/results.tsv" | wc -l | tr -d ' ')"
 awk -F'\t' '$2 == "FAIL" { printf "FAIL  step %s: %s  [%s]\n", $1, $3, $4 }' "$OUT/results.tsv"
-echo "checks: $np passed, $nf failed, $ni informational"
-if [ "$nf" -eq 0 ]; then echo "guide-steps: OK"; exit 0; fi
-echo "guide-steps: FAILED"
-exit 1
+# The last line of summary.txt is the verdict; run.sh requires "guide-steps: OK" in it.
+{ echo "checks: $np passed, $nf failed, $ni informational"; if [ "$nf" -eq 0 ]; then echo "guide-steps: OK"; else echo "guide-steps: FAILED"; fi; } | tee -a "$OUT/summary.txt"
+[ "$nf" -eq 0 ]

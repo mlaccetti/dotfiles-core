@@ -6,6 +6,12 @@
 # followed by a short wait for the shell to settle (use it for `exec zsh -l`,
 # which replaces the shell). Any other LINE is followed by a sentinel; the
 # command's exit status is printed as "RC(<n>)=<status>" after it finishes.
+# Refuse to run outside the sandbox VM. guide-steps.sh checks the VM itself and then
+# exports E2E_IN_VM=1; without that marker (or off a VM) this spawns nothing.
+if {![info exists env(E2E_IN_VM)] || $env(E2E_IN_VM) ne "1" || [catch {exec /usr/sbin/sysctl -n kern.hv_vmm_present} e2e_vmm] || $e2e_vmm ne "1"} {
+  puts stderr "[file tail $argv0]: refusing to run: only for the throwaway sandbox VM (run it through guide-steps.sh)"
+  exit 97
+}
 set T [lindex $argv 0]
 set timeout $T
 set lines [lrange $argv 1 end]
