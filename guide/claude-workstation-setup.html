@@ -278,7 +278,7 @@ tbody tr:last-child td { border-bottom: 0; }
   <div class="topbar-in">
     <b>Claude Workstation Setup</b>
     <div class="meter" aria-hidden="true"><i id="meter-fill"></i></div>
-    <span class="count" id="count" aria-live="polite">0 of 13 done</span>
+    <span class="count" id="count" aria-live="polite">0 of 12 done</span>
   </div>
 </div>
 
@@ -297,7 +297,7 @@ tbody tr:last-child td { border-bottom: 0; }
       <li><a href="#step-5" data-nav="s5"><span class="n">4</span><span class="t">Restart the terminal</span><i class="dot"></i></a></li>
       <li><a href="#step-6" data-nav="s6"><span class="n">5</span><span class="t">iTerm2 look</span><i class="dot"></i></a></li>
       <li><a href="#step-7" data-nav="s7"><span class="n">6</span><span class="t">Claude sign-in</span><i class="dot"></i></a></li>
-      <li><a href="#step-gateway" data-nav="sgw"><span class="n">7</span><span class="t">Company gateway</span><i class="dot"></i></a></li>
+      <li><a href="#step-gateway" data-nav="sgw"><span class="n">7</span><span class="t">LLM gateway (optional)</span><i class="dot"></i></a></li>
       <li><a href="#step-8" data-nav="s8"><span class="n">8</span><span class="t">Connect your tools</span><i class="dot"></i></a></li>
       <li><a href="#step-9" data-nav="s9"><span class="n">9</span><span class="t">Health check</span><i class="dot"></i></a></li>
     </ol>
@@ -315,8 +315,8 @@ tbody tr:last-child td { border-bottom: 0; }
       <div>
         <div class="eyebrow">Mac setup guide</div>
         <h1>Claude Workstation Setup</h1>
-        <p class="lead">When you finish, you will have a terminal where you type a plain-English request and Claude Code does the work across Linear, Confluence and Jira, Salesforce and GitHub. It can also build small internal web apps for the business, following your company's own documentation.</p>
-        <p class="meta">Plan on 30 to 60 minutes of hands-on time, plus any waiting on an admin. Your ticks are saved in this browser, so you can close the page and come back.</p>
+        <p class="lead">When you finish, you will have a terminal where you type a plain-English request and Claude Code does the work across Linear, Confluence and Jira, and GitHub. It can also build small web apps, following the documentation you keep in Confluence.</p>
+        <p class="meta">Plan on 30 to 60 minutes of hands-on time. Your ticks are saved in this browser, so you can close the page and come back.</p>
       </div>
       <div class="term preview" role="img" aria-label="Preview of the finished terminal prompt: you at your-mac in ~/projects on main, with a check mark, then a second line with the cursor.">
         <span class="cap">What your prompt will look like when setup is done</span>
@@ -347,8 +347,8 @@ tbody tr:last-child td { border-bottom: 0; }
             <li>The terminal theme and the prompt</li>
             <li>The command-line tools Claude Code uses</li>
             <li>Node</li>
-            <li><code class="i">claude-gw</code>, for the company gateway</li>
-            <li>The connections to Linear, Atlassian, GitHub and Salesforce</li>
+            <li><code class="i">claude-gw</code>, for an LLM gateway if you use one</li>
+            <li>The connections to Linear, Atlassian and GitHub</li>
           </ul>
         </div>
       </div>
@@ -360,8 +360,7 @@ tbody tr:last-child td { border-bottom: 0; }
       <ul class="examples stack">
         <li><span class="tag">Linear</span><q>Summarize the open Linear issues in my team's current cycle.</q></li>
         <li><span class="tag">Confluence</span><q>Draft a Confluence page from these meeting notes.</q></li>
-        <li><span class="tag">Salesforce</span><q>Pull this quarter's closed-won opportunities from Salesforce and total them by region.</q></li>
-        <li><span class="tag">Web app</span><q>Build a small internal dashboard for this week's signups, following our deployment guide in Confluence.</q></li>
+        <li><span class="tag">Web app</span><q>Build a small dashboard for this week's signups, following the deployment steps on the Deploying page in Confluence.</q></li>
       </ul>
     </section>
 
@@ -411,7 +410,7 @@ else
   eval "$(/usr/local/bin/brew shellenv)"
 fi</code></pre><button class="copy" type="button">Copy</button></div>
               <p>Then run <code class="i">brew --version</code> again. This only affects the current window. After Step 3, your settings put Homebrew on your path in every new window.</p>
-              <p>On a company-managed Mac, this install is the one most likely to be blocked. If it fails or waits for permissions you do not have, ask your company's IT to approve Homebrew or install it for you, then come back to this step.</p>
+              <p>If your Mac restricts installing software, this install is the one most likely to be blocked. If it fails or waits for permissions you do not have, ask whoever manages your Mac to approve Homebrew or install it for you, then come back to this step.</p>
             </div>
           </div>
         </article>
@@ -441,7 +440,7 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
             <label class="tick"><input type="checkbox" id="tick-s4" data-step="s4"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
           </div>
           <div class="step-body">
-            <p class="what">This is the big one. It asks three short questions, then installs whatever is missing, including the FiraCode Nerd Font that draws the icons and arrows in your prompt. It applies all the settings and the Claude Code theme, and installs two small commands, <code class="i">claude-gw-setup</code> and <code class="i">claude-gw</code>, which you use in Step 7. It leaves any app you already have as it is. It takes a while, and the installs are the slowest part.</p>
+            <p class="what">This is the big one. It asks three short questions, then installs whatever is missing, including the FiraCode Nerd Font that draws the icons and arrows in your prompt. It applies all the settings and the Claude Code theme, and installs two small commands, <code class="i">claude-gw-setup</code> and <code class="i">claude-gw</code>, which you only need in Step 7 if you use an LLM gateway. It leaves any app you already have as it is. It takes a while, and the installs are the slowest part.</p>
             <div class="term cmd"><pre><code>chezmoi init --apply https://github.com/mlaccetti/dotfiles-core</code></pre><button class="copy" type="button">Copy</button></div>
             <p class="what">Partway through, setup prints a short list of anything it found already installed and left alone. It starts with <code class="i">Already installed, leaving as is</code>. That is expected, and nothing is wrong.</p>
             <p class="what">You will be asked three questions in this exact order. The question text below is what the terminal prints.</p>
@@ -454,12 +453,12 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
               <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>After the three answers, a long stream of output. Homebrew installs whatever is missing (several minutes), your settings are written, and there are notes about the iTerm2 profile and the Claude Code theme. A message about <code class="i">~/.oh-my-zsh</code> is safe to ignore on a new machine.</p></div>
               <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
                 <ul>
-                  <li>If one Homebrew package fails partway, that is expected on a managed Mac. Setup keeps going. Write down which one failed and get it approved, or ignore it for now. The health check in Step 9 lists what is still missing.</li>
+                  <li>If one Homebrew package fails partway, your Mac may be restricting installs. Setup keeps going. Write down which one failed and get it approved, or ignore it for now. The health check in Step 9 lists what is still missing.</li>
                   <li>You can run this command again at any time. It asks the three questions again and does not damage your files.</li>
                 </ul>
               </div>
             </div>
-            <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Check your git identity afterward</h4><p>Your name and email are saved to your git settings only if none were set already. IT may have set them, and setup will not overwrite that. When it finishes, check what you ended up with:</p>
+            <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Check your git identity afterward</h4><p>Your name and email are saved to your git settings only if none were set already. If your Mac already has a git identity, setup will not overwrite it. When it finishes, check what you ended up with:</p>
               <div class="term cmd" style="margin-top:0.5rem"><pre><code>git config --global user.name</code></pre><button class="copy" type="button">Copy</button></div>
               <div class="term cmd"><pre><code>git config --global user.email</code></pre><button class="copy" type="button">Copy</button></div>
               <p style="margin-top:0.5rem">If either is wrong, set it with <code class="i">git config --global user.name "Your Name"</code> or <code class="i">git config --global user.email "you@example.com"</code>.</p></div>
@@ -516,7 +515,7 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
             <label class="tick"><input type="checkbox" id="tick-s7" data-step="s7"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
           </div>
           <div class="step-body">
-            <p class="what">Setup installed Claude Code if it was missing. If <code class="i">claude</code> already opens without asking you to sign in, and <code class="i">/status</code> shows your work account, you are already signed in and can skip this step. Otherwise, sign in to your company's Claude Enterprise account. You do this once, and after that plain <code class="i">claude</code> uses it every time. Do this in your new iTerm2 window.</p>
+            <p class="what">Setup installed Claude Code if it was missing. If <code class="i">claude</code> already opens without asking you to sign in, and <code class="i">/status</code> shows your account, you are already signed in and can skip this step. Otherwise, sign in with the account you use for Claude. You do this once, and after that plain <code class="i">claude</code> uses it every time. Do this in your new iTerm2 window.</p>
             <div class="term cmd"><pre><code>claude</code></pre><button class="copy" type="button">Copy</button></div>
             <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>The first time you run it</h4>
               <p>If setup installed Claude Code, macOS may show a dialog saying it cannot verify the app. That is normal for software installed outside the App Store, and nothing is wrong. Click <b>Open</b> or <b>Open Anyway</b>. If the dialog has no such button, open <b>System Settings &gt; Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b> next to the message about <code class="i">claude</code>. This happens once per computer. If <code class="i">claude</code> seems to hang with no output, the dialog is probably hidden behind another window.</p>
@@ -525,17 +524,17 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
               <p>If you are not signed in, Claude Code asks how you want to log in.</p>
               <ul>
                 <li>Choose the <b>Claude account</b> option (the one that mentions Pro, Max, Team, or Enterprise). Do <b>not</b> choose the Console or API key option.</li>
-                <li>A browser window opens. Sign in with your <b>work email</b>. Your company probably uses single sign-on (SSO), so you may land on your company's normal login page.</li>
+                <li>A browser window opens. Sign in with the account you use for Claude. If it uses single sign-on (SSO), you may land on that account's normal login page.</li>
                 <li>Go back to the terminal. Answer any other first-time questions, like the color theme or trusting the folder, with the suggested default.</li>
               </ul>
               <p>Once you see the Claude Code prompt, you are signed in. Type <code class="i">/exit</code> to leave for now.</p>
             </div>
-            <p class="what quiet">When Claude Code asks whether you trust a folder, say yes only for folders you know, such as your own projects or repos from your team. A trusted folder can run its own setup scripts, and those scripts can use your saved tokens.</p>
+            <p class="what quiet">When Claude Code asks whether you trust a folder, say yes only for folders you know, such as your own projects or repos from people you trust. A trusted folder can run its own setup scripts, and those scripts can use your saved tokens.</p>
             <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
               <ul>
                 <li>If <code class="i">claude</code> just sits there with no output, or macOS says it cannot verify the app, see <a href="#troubleshooting">Troubleshooting</a>.</li>
-                <li>If the browser window never opens or the sign-in is blocked, ask your company's IT whether browser sign-in (SSO) is allowed for Claude Code.</li>
-                <li>If it says your account has no access, ask IT to confirm your work email has a Claude Enterprise seat.</li>
+                <li>If the browser window never opens or the sign-in is blocked, ask whoever manages your Mac whether browser sign-in is allowed for Claude Code.</li>
+                <li>If it says your account has no access, check that your Claude plan includes Claude Code.</li>
                 <li>If you picked the Console option by mistake, type <code class="i">/logout</code> (this is fine in plain <code class="i">claude</code>, and only there), then run <code class="i">claude</code> again and choose the Claude account option.</li>
                 <li>If the command is not recognized, open a new iTerm2 window.</li>
               </ul>
@@ -547,11 +546,11 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
         <article class="step" id="step-gateway" data-step="sgw">
           <div class="step-h">
             <span class="num">7</span>
-            <h3>Set up the company gateway</h3>
-            <label class="tick"><input type="checkbox" id="tick-sgw" data-step="sgw"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
+            <h3>Set up an LLM gateway <span class="pill">Optional</span></h3>
+            <label class="tick"><input type="checkbox" id="tick-sgw" data-step="sgw" data-optional="1"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label>
           </div>
           <div class="step-body">
-            <p class="what">Your company also runs an LLM gateway. You set it up once, and then <code class="i">claude-gw</code> uses it. You need the gateway address and your gateway token from whoever runs the gateway at your company. Ask them for the model names too, if the gateway needs specific ones. Have these ready before you run the command.</p>
+            <p class="what">Skip this step if you do not use an LLM gateway. If you do, you set it up once, and then <code class="i">claude-gw</code> uses it. You need the gateway address and your gateway token from whoever runs your gateway. Ask them for the model names too, if the gateway needs specific ones. Ask for the token through a password manager or another secure channel, not plain chat or email. Have these ready before you run the command.</p>
             <div class="term cmd"><pre><code>claude-gw-setup</code></pre><button class="copy" type="button">Copy</button></div>
             <p class="what">It asks you four questions:</p>
             <div class="prompts">
@@ -566,16 +565,16 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
                 <ul>
                   <li>"command not found": run <code class="i">chezmoi apply</code> to install the commands, then open a new terminal window.</li>
                   <li>"The gateway rejected the token": the token was mistyped or is not valid. Get it again from whoever runs the gateway and run <code class="i">claude-gw-setup</code> again. It is safe to run again at any time.</li>
-                  <li>"couldn't reach": check the address, and check that you are on the company network or VPN if the gateway needs it.</li>
-                  <li>If Claude Code will not let you use one of the two sign-in methods, ask your company's IT whether its managed settings force a single login method (<code class="i">forceLoginMethod</code>). You use Claude Code both ways.</li>
+                  <li>"couldn't reach": check the address, and check that you are on the network or VPN the gateway needs, if any.</li>
+                  <li>If Claude Code will not let you use both sign-in methods, a setting such as <code class="i">forceLoginMethod</code> may be locking it to one. Whoever manages your Claude Code settings can change that.</li>
                 </ul>
               </div>
             </div>
 
             <h4 class="subhead">Which one to use: <code class="i">claude</code> or <code class="i">claude-gw</code></h4>
             <div class="outcomes two">
-              <div class="oc"><h4>Enterprise</h4><p>Use <code class="i">claude</code> for work through the company's Claude Enterprise account.</p></div>
-              <div class="oc"><h4>Gateway</h4><p>Use <code class="i">claude-gw</code> when you need the company gateway instead. It takes the same commands but signs in with your saved gateway token, so some Claude.ai features, like apps connected on the Claude website, will not appear there.</p></div>
+              <div class="oc"><h4>Claude account</h4><p>Use <code class="i">claude</code> with the account you signed in with in Step 6.</p></div>
+              <div class="oc"><h4>Gateway</h4><p>Use <code class="i">claude-gw</code> when you want the gateway instead. It takes the same commands but signs in with your saved gateway token, so some Claude.ai features, like apps connected on the Claude website, will not appear there.</p></div>
             </div>
             <p class="cmd-label">To start Claude through the gateway:</p>
             <div class="term cmd"><pre><code>claude-gw</code></pre><button class="copy" type="button">Copy</button></div>
@@ -584,17 +583,17 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
               <svg class="icon" aria-hidden="true"><use href="#i-alert"/></svg>
               <div class="caution-body">
                 <h4>Caution</h4>
-                <p>Never type <code class="i">/logout</code> inside <code class="i">claude-gw</code>. It can sign you out of Enterprise, and you would have to sign in again with <code class="i">claude</code>.</p>
+                <p>Never type <code class="i">/logout</code> inside <code class="i">claude-gw</code>. It can sign you out of your Claude account, and you would have to sign in again with <code class="i">claude</code>.</p>
                 <p class="plain">If a gateway session shows a warning about a saved login, ignore it and do not log out.</p>
               </div>
             </div>
 
             <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Good to know about the gateway</h4>
               <ul>
-                <li>Your Enterprise sign-in stays saved while you use the gateway. Switching is just typing the other name.</li>
-                <li>Usage is billed to the gateway, not to your Enterprise account.</li>
+                <li>Your Claude sign-in stays saved while you use the gateway. Switching is just typing the other name.</li>
+                <li>Usage is billed to the gateway, not to your Claude plan.</li>
                 <li>Your Linear and Atlassian connections (Step 8) work in both, because they are added with <code class="i">--scope user</code>. Anything connected only through the Claude website appears only in plain <code class="i">claude</code>.</li>
-                <li>Company settings pushed to your Enterprise account may not apply. Remote control and voice do not work.</li>
+                <li>Settings that come from your Claude account may not apply. Remote control and voice do not work.</li>
               </ul>
             </div>
           </div>
@@ -607,7 +606,7 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
             <h3>Connect your tools</h3>
           </div>
           <div class="step-body">
-            <p class="what">This is the point of the whole setup. Each tool below is connected once and opens a normal browser sign-in with your own login. Claude never sees your password. Type the commands at the normal prompt, not inside Claude, unless a step says otherwise. A browser tab opening is expected. If it is blocked, ask your company's IT whether browser sign-in (SSO) is allowed for that tool.</p>
+            <p class="what">This is the point of the whole setup. Each tool below is connected once and opens a normal browser sign-in with your own login. Claude never sees your password. Type the commands at the normal prompt, not inside Claude, unless a step says otherwise. A browser tab opening is expected. If it is blocked, ask whoever manages your Mac whether browser sign-in is allowed for that tool.</p>
             <div class="oc note"><h4><svg class="icon"><use href="#i-info"/></svg>Why the commands say --scope user</h4><p>It makes each connection available in every folder you open Claude Code in, and in both <code class="i">claude</code> and <code class="i">claude-gw</code>. Without it, Claude Code saves the connection only for the folder you were in when you ran the command, and it seems to disappear everywhere else.</p></div>
 
             <div class="connector" id="c-linear">
@@ -623,11 +622,11 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
             <div class="connector" id="c-atlassian">
               <div class="connector-h"><h4><span class="step-id">8b</span>Confluence and Jira (Atlassian)</h4>
                 <label class="tick"><input type="checkbox" id="tick-s8-atlassian" data-step="s8-atlassian"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
-              <p class="what">This only works once your Atlassian admin has turned on Rovo remote MCP access for your Atlassian site. Ask them if you are not sure.</p>
+              <p class="what">This only works once Rovo remote MCP access is turned on for your Atlassian site. If you are not sure it is, ask whoever administers your Atlassian site.</p>
               <div class="term cmd"><pre><code>claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp</code></pre><button class="copy" type="button">Copy</button></div>
               <div class="outcomes two">
                 <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>The same as Linear: a confirmation that the server was added. You sign in to it in the next block.</p></div>
-                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>An error about access being disabled usually means your admin has not turned on Rovo or MCP yet. A sign-in that never finishes is usually the browser sign-in policy.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>An error about access being disabled usually means Rovo or MCP is not turned on for your Atlassian site yet. Ask whoever administers the site to enable it. A sign-in that never finishes is usually browser sign-in being blocked on your Mac.</p></div>
               </div>
             </div>
 
@@ -645,7 +644,7 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
               </div>
               <div class="outcomes two">
                 <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p><code class="i">/mcp</code> lists Linear and Atlassian as connected.</p></div>
-                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If the browser does not open by itself, copy the web address Claude Code shows and open it yourself. If sign-in is blocked, ask IT about browser sign-in.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If the browser does not open by itself, copy the web address Claude Code shows and open it yourself. If sign-in is blocked, ask whoever manages your Mac whether browser sign-in is allowed.</p></div>
               </div>
             </div>
 
@@ -655,28 +654,12 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
               <div class="term cmd"><pre><code>gh auth login</code></pre><button class="copy" type="button">Copy</button></div>
               <div class="outcomes two">
                 <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>A question about how to sign in. Choose "Login with a web browser" and follow along. It ends with "Logged in as" and your username.</p></div>
-                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If your company's GitHub uses SSO, you may need to authorize the login for your organization afterward, on GitHub's own website.</p></div>
-              </div>
-            </div>
-
-            <div class="connector" id="c-salesforce">
-              <div class="connector-h"><h4><span class="step-id">8e</span>Salesforce <span class="pill">Optional</span></h4>
-                <label class="tick"><input type="checkbox" id="tick-s8-salesforce" data-step="s8-salesforce" data-optional="1"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
-              <p class="what">Skip this if you do not use Salesforce. The command line tool below works on any edition. Salesforce's hosted MCP server needs Enterprise Edition or higher, so ask your Salesforce admin whether it applies to you. Claude Code can use whichever one is connected.</p>
-              <div class="term cmd"><pre><code>npm install -g @salesforce/cli</code></pre><button class="copy" type="button">Copy</button></div>
-              <p class="cmd-label">Then sign in. It opens a browser window:</p>
-              <div class="term cmd"><pre><code>sf org login web</code></pre><button class="copy" type="button">Copy</button></div>
-              <div class="outcomes two">
-                <div class="oc good"><h4><svg class="icon"><use href="#i-eye"/></svg>You should see</h4><p>The install adds the <code class="i">sf</code> command. Check with <code class="i">sf --version</code>. After you approve the browser login, the terminal says which org you are connected to.</p></div>
-                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4>
-                  <p>If <code class="i">npm</code> is not found, Node.js did not finish installing in Step 3. This is often a network or IT block. Run this, then open a new terminal window and try again:</p>
-                  <div class="term cmd"><pre><code>mise install</code></pre><button class="copy" type="button">Copy</button></div>
-                  <p>A sign-in that never finishes is the browser sign-in policy.</p></div>
+                <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>If your GitHub access goes through single sign-on (SSO), you may need to authorize the login for it afterward, on GitHub's own website.</p></div>
               </div>
             </div>
 
             <div class="connector" id="c-list">
-              <div class="connector-h"><h4><span class="step-id">8f</span>Confirm the connections</h4>
+              <div class="connector-h"><h4><span class="step-id">8e</span>Confirm the connections</h4>
                 <label class="tick"><input type="checkbox" id="tick-s8-list" data-step="s8-list"><span class="tick-box"><svg class="icon"><use href="#i-check"/></svg></span><span class="tick-txt">Done</span></label></div>
               <div class="term cmd"><pre><code>claude mcp list</code></pre><button class="copy" type="button">Copy</button></div>
               <div class="outcomes two">
@@ -707,7 +690,7 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
                 </ul>
                 <p>It ends with a summary. Partway through you will also see a glyph line that you have to check by eye, described next.</p>
               </div>
-              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>Work through the [FAIL] lines from top to bottom and run each Fix line. Run the check again after each fix. If you skipped an app because IT has not approved it yet, a [FAIL] for that app is expected, and you can get it approved later. Each Fix line installs only the one thing that is missing, so it never touches the apps you already have.</p></div>
+              <div class="oc bad"><h4><svg class="icon"><use href="#i-alert"/></svg>If it fails</h4><p>Work through the [FAIL] lines from top to bottom and run each Fix line. Run the check again after each fix. If you skipped an app because your Mac blocked its install, a [FAIL] for that app is expected, and you can get it approved later. Each Fix line installs only the one thing that is missing, so it never touches the apps you already have.</p></div>
             </div>
           </div>
         </article>
@@ -763,22 +746,25 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
           <thead><tr><th>Symptom</th><th>Likely cause</th><th>Fix</th></tr></thead>
           <tbody>
                         <tr><td data-label="Symptom">Glyphs show as boxes or question marks</td><td data-label="Likely cause">The Nerd Font is not installed, or the iTerm2 profile or font is not selected.</td><td data-label="Fix">See <a href="#glyphs">the glyph check</a>.</td></tr>
-            <tr><td data-label="Symptom">"Anthropic" does not appear in iTerm2's Profiles list</td><td data-label="Likely cause">The profile file was not copied. Step 3 did not finish, or your company has locked iTerm2's Application Support folder.</td><td data-label="Fix">
+            <tr><td data-label="Symptom">"Anthropic" does not appear in iTerm2's Profiles list</td><td data-label="Likely cause">The profile file was not copied. Step 3 did not finish, or iTerm2's Application Support folder is not writable.</td><td data-label="Fix">
               <p>Run the health check (Step 9) and look at the "iTerm2 Dynamic Profile" section for the exact fix. Or copy the file by hand with this command, then restart iTerm2:</p>
               <div class="term cmd" style="margin-top:0.5rem"><pre><code>mkdir -p "$HOME/Library/Application Support/iTerm2/DynamicProfiles" &amp;&amp; cp "$(chezmoi source-path)/iterm2/Anthropic.json" "$HOME/Library/Application Support/iTerm2/DynamicProfiles/Anthropic.json"</code></pre><button class="copy" type="button">Copy</button></div></td></tr>
             <tr><td data-label="Symptom">Setup fails with a 1Password error</td><td data-label="Likely cause">You answered <code class="i">true</code> to the 1Password question and the <code class="i">op</code> tool is not signed in.</td><td data-label="Fix">Run <code class="i">op signin</code> and run the setup again, or run <code class="i">chezmoi init</code> again and answer <code class="i">false</code>. This should not come up unless you added something yourself.</td></tr>
-            <tr><td data-label="Symptom">Your shell does not look like zsh, or <code class="i">~/.zshrc</code> does not seem to apply</td><td data-label="Likely cause">Your default shell is not zsh. Some managed Macs change it.</td><td data-label="Fix">
+            <tr><td data-label="Symptom">Your shell does not look like zsh, or <code class="i">~/.zshrc</code> does not seem to apply</td><td data-label="Likely cause">Your default shell is not zsh. A Mac set up by someone else can use a different one.</td><td data-label="Fix">
               <p>Check your shell. You should see <code class="i">/bin/zsh</code>:</p>
               <div class="term cmd" style="margin-top:0.5rem"><pre><code>echo $SHELL</code></pre><button class="copy" type="button">Copy</button></div>
-              <p style="margin-top:0.5rem">If it is something else, run the command below and open a new terminal. If your company blocks it, ask IT to set your default shell.</p>
+              <p style="margin-top:0.5rem">If it is something else, run the command below and open a new terminal. If that is blocked, ask whoever manages your Mac to set your default shell.</p>
               <div class="term cmd" style="margin-top:0.5rem"><pre><code>chsh -s /bin/zsh</code></pre><button class="copy" type="button">Copy</button></div></td></tr>
             <tr><td data-label="Symptom">A command like <code class="i">bat</code>, <code class="i">fzf</code> or <code class="i">chezmoi</code> says "command not found" right after installing</td><td data-label="Likely cause">You are still in the old shell, from before Homebrew or chezmoi was on your PATH.</td><td data-label="Fix">Open a brand-new terminal window, or run <code class="i">exec zsh -l</code>.</td></tr>
             <tr><td data-label="Symptom">macOS says it cannot verify <code class="i">claude</code>, or <code class="i">claude</code> produces no output and never finishes</td><td data-label="Likely cause">macOS is waiting for a security confirmation, possibly behind another window. This happens once, the first time you run <code class="i">claude</code> after setup installed it.</td><td data-label="Fix">Look for the dialog in your other windows and click <b>Open</b> or <b>Open Anyway</b>. If there is no such button, open <b>System Settings &gt; Privacy &amp; Security</b>, scroll down, and click <b>Open Anyway</b> next to the message about <code class="i">claude</code>. You only do this once on a computer. Pressing Ctrl+C to cancel is safe.</td></tr>
-            <tr><td data-label="Symptom">A browser sign-in window never opens, or opens and then shows an error</td><td data-label="Likely cause">Company single sign-on or security software is blocking it.</td><td data-label="Fix">Ask your company's IT to confirm browser sign-in is allowed for that tool.</td></tr>
+            <tr><td data-label="Symptom">A browser sign-in window never opens, or opens and then shows an error</td><td data-label="Likely cause">Single sign-on or security software is blocking it.</td><td data-label="Fix">Ask whoever manages your Mac, or the service you are signing in to, whether browser sign-in is allowed for that tool.</td></tr>
             <tr><td data-label="Symptom"><code class="i">claude-gw</code> says "Run claude-gw-setup first."</td><td data-label="Likely cause">The gateway has not been set up on this computer yet, or its saved settings were deleted.</td><td data-label="Fix">Run <code class="i">claude-gw-setup</code> (Step 7). You need the gateway address and token from whoever runs the gateway.</td></tr>
             <tr><td data-label="Symptom">The gateway rejects your token ("401", "unauthorized" or "invalid API key")</td><td data-label="Likely cause">The saved token is wrong, expired, or was revoked.</td><td data-label="Fix">Get a fresh token from whoever runs the gateway, then run <code class="i">claude-gw-setup</code> again and paste it in.</td></tr>
             <tr><td data-label="Symptom">A "model not found" (or similar) error in <code class="i">claude-gw</code></td><td data-label="Likely cause">The gateway uses its own model names.</td><td data-label="Fix">Ask whoever runs the gateway for its Opus, Sonnet and Haiku model names, then run <code class="i">claude-gw-setup</code> again and answer <code class="i">y</code> to the model names question.</td></tr>
-            <tr><td data-label="Symptom">Your Enterprise login seems gone after using the gateway (plain <code class="i">claude</code> asks you to log in again)</td><td data-label="Likely cause">You probably typed <code class="i">/logout</code> inside <code class="i">claude-gw</code>, which signs you out of Enterprise.</td><td data-label="Fix">Run <code class="i">claude</code> and sign in again with your work email (Step 6). Then use <code class="i">claude-gw</code> without <code class="i">/logout</code>.</td></tr>
+            <tr><td data-label="Symptom">Your Claude login seems gone after using the gateway (plain <code class="i">claude</code> asks you to log in again)</td><td data-label="Likely cause">You probably typed <code class="i">/logout</code> inside <code class="i">claude-gw</code>, which signs you out of your Claude account.</td><td data-label="Fix">Run <code class="i">claude</code> and sign in again with your Claude account (Step 6). Then use <code class="i">claude-gw</code> without <code class="i">/logout</code>.</td></tr>
+            <tr><td data-label="Symptom"><code class="i">node</code> or <code class="i">npm</code> says "command not found"</td><td data-label="Likely cause">Node.js did not finish installing in Step 3, often because of a network problem.</td><td data-label="Fix">
+              <p>Run this, then open a new terminal window and try again:</p>
+              <div class="term cmd" style="margin-top:0.5rem"><pre><code>mise install</code></pre><button class="copy" type="button">Copy</button></div></td></tr>
             <tr><td data-label="Symptom">Linear or Atlassian works in one folder but is missing in another</td><td data-label="Likely cause">It was added without <code class="i">--scope user</code>, so it was saved only for that one folder.</td><td data-label="Fix">Run the connect command again from Step 8a or 8b, with <code class="i">--scope user</code> as written there.</td></tr>
             <tr><td data-label="Symptom">You are not sure what belongs in <code class="i">~/.zshrc.local</code></td><td data-label="Likely cause">It is easy to confuse with the managed <code class="i">~/.zshrc</code>.</td><td data-label="Fix">You can ignore it for now. It is your own file, and setup never overwrites it.</td></tr>
           </tbody>
@@ -789,7 +775,7 @@ fi</code></pre><button class="copy" type="button">Copy</button></div>
     <section class="sec" id="keep-going" aria-labelledby="h-go">
       <h2 id="h-go">Keep going</h2>
       <div class="stack">
-        <p class="what" style="max-width:62ch">To start Claude Code, open a terminal in a project folder and type <code class="i">claude</code>. That uses your company's Claude Enterprise account. To use the company gateway instead, type <code class="i">claude-gw</code>, and never type <code class="i">/logout</code> inside it. Then try the four requests from the top of this page, in your own words. The health check from Step 9 is always safe to run again, and it points at whatever is actually broken.</p>
+        <p class="what" style="max-width:62ch">To start Claude Code, open a terminal in a project folder and type <code class="i">claude</code>. That uses your Claude account. If you set up an LLM gateway in Step 7, type <code class="i">claude-gw</code> to use it instead, and never type <code class="i">/logout</code> inside it. Then try the three requests from the top of this page, in your own words. The health check from Step 9 is always safe to run again, and it points at whatever is actually broken.</p>
         <div class="term cmd"><pre><code>claude</code></pre><button class="copy" type="button">Copy</button></div>
         <div class="reset">
           <span id="reset-idle"><button class="linkbtn" type="button" id="reset-open">Reset progress</button></span>
