@@ -8,7 +8,7 @@
 # in every new terminal.
 #
 # Use it for:
-#   - work-specific tooling (VPNs, internal CLIs, company URLs)
+#   - tooling specific to you or this machine (VPNs, private CLIs, private URLs)
 #   - secrets or tokens (never put these in the shared, public repo!)
 #   - personal aliases and shortcuts you don't want to share
 #   - anything you're just trying out and don't want to commit to yet
@@ -30,7 +30,7 @@
 # -----------------------------------------------------------------------
 # Example 2: an environment variable / export
 # -----------------------------------------------------------------------
-# export MY_COMPANY_API_URL="https://api.example-work.com"
+# export MY_API_URL="https://api.example.com"
 
 # -----------------------------------------------------------------------
 # Example 3: a function (put anything more than one line here)

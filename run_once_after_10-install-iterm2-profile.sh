@@ -40,7 +40,7 @@ if mkdir -p "$DEST_DIR" && cp "$SRC_PROFILE" "$DEST_PROFILE"; then
 else
   echo "    !! Could not write to: ${DEST_DIR}"
   echo "    !! This can happen if iTerm2's Application Support folder is"
-  echo "    !! restricted by MDM/managed-app policy, or iTerm2 isn't installed."
+  echo "    !! not writable, or iTerm2 isn't installed."
   echo "    !! ACTION NEEDED: check permissions on that folder, or copy"
   echo "    !! ${SRC_PROFILE} there by hand once iTerm2 is installed."
   exit 0

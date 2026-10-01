@@ -394,14 +394,12 @@ if has 'linear-server' "$PTY_TXT" && has 'atlassian' "$PTY_TXT"; then
 else
   bad 7 "claude mcp list from a different folder shows both servers" "$(tail -4 "$PTY_TXT" | tr '\n' '|')"
 fi
-info 7 "OAuth sign-in (/mcp), gh auth login, sf org login web skipped" "each needs a browser"
+info 7 "OAuth sign-in (/mcp) and gh auth login skipped" "each needs a browser"
 
 pty s7-gh 60 'gh --version'
 [ "$PTY_RC" -eq 0 ] && pass 7 "gh --version" "$(head -1 "$PTY_TXT")" || bad 7 "gh --version" "exit $PTY_RC"
-g_run s7-sf-install 'npm install -g @salesforce/cli'
-[ "$PTY_RC" -eq 0 ] && pass 7 "npm install -g @salesforce/cli (Node via mise works)" "exit 0" || bad 7 "npm install -g @salesforce/cli" "exit $PTY_RC: $(tail -3 "$PTY_TXT" | tr '\n' '|')"
-pty s7-sf-version 180 'sf --version'
-[ "$PTY_RC" -eq 0 ] && pass 7 "sf --version in a fresh shell" "$(tail -1 "$PTY_TXT")" || bad 7 "sf --version" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
+pty s7-npm 60 'npm --version'
+[ "$PTY_RC" -eq 0 ] && pass 7 "npm --version (Node via mise works)" "$(tail -1 "$PTY_TXT")" || bad 7 "npm --version" "exit $PTY_RC: $(tail -2 "$PTY_TXT" | tr '\n' '|')"
 
 # ================================================================== 8 (guide step 9: health check)
 section "Step 8: Health check (doctor.sh)"

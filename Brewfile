@@ -2,7 +2,7 @@
 #
 # This installs the everyday tools for using Claude Code as your main way
 # of getting work done: talking to Linear, Confluence, git, and building
-# small internal tools, plus a nicer-looking terminal to run it all in.
+# small tools, plus a nicer-looking terminal to run it all in.
 #
 # It deliberately leaves out software developers use to write and test
 # code by hand (linters, language servers, editors like neovim, terminal
@@ -15,22 +15,20 @@
 # Check what's missing without installing anything:
 #   brew bundle check --file=~/.local/share/chezmoi/Brewfile --no-upgrade
 #
-# ---- A note for a WORK / MDM-managed laptop ----
+# ---- A note for a Mac that restricts installs ----
 #
-# Every line below flagged "MDM" is a place where a corporate-managed Mac
-# is likely to get in the way: blocked installs needing IT approval,
-# software-restriction/Gatekeeper policy, or something the company already
-# deploys through its own management tooling (so a second, brew-installed
-# copy could conflict or just be redundant). None of this is fatal - the
-# bootstrap scripts in this repo are written to log a clear "needs IT
-# approval" message and keep going rather than aborting the whole setup.
-# Before running this on a company laptop, skim the flagged lines and
-# comment out anything you know is already handled by IT, or that IT
-# policy won't allow.
+# Every line below flagged "Restricted installs" is a place where a Mac
+# that limits what software can be installed is likely to get in the way:
+# blocked installs, software-restriction/Gatekeeper policy, or something
+# already installed another way (so a second, brew-installed copy could
+# conflict or just be redundant). None of this is fatal - the bootstrap
+# scripts in this repo are written to log a clear "install blocked"
+# message and keep going rather than aborting the whole setup. If an
+# install is blocked, ask whoever manages your Mac, or comment out the
+# lines you don't need.
 #
-# Even Homebrew itself can be MDM-restricted on some fleets (installing to
-# /opt/homebrew or /usr/local may need admin rights or an IT-approved
-# installer). See run_once_before_00-install-homebrew.sh.
+# Even Homebrew itself can be restricted (installing to /opt/homebrew or
+# /usr/local needs admin rights). See run_once_before_00-install-homebrew.sh.
 
 # ---- Shell & terminal ----
 # Makes the terminal itself nicer to read and use: autocomplete-style
@@ -60,32 +58,29 @@ brew "gh"
 
 # ---- GUI apps ----
 cask "iterm2"
-# MDM: many companies deploy 1Password (and require a specific SSO-linked
-# build) through their own MDM/app-store channel. A second brew-installed
-# copy can conflict with an existing managed install - check with IT
-# before installing, or skip these two lines if 1Password is already on
-# the machine.
+# Restricted installs: 1Password may already be installed another way (for
+# example from the App Store or its own installer). A second brew-installed
+# copy can conflict with an existing install - skip these two lines if
+# 1Password is already on the machine.
 cask "1password"
 cask "1password-cli"
-# MDM: third-party AI coding tools are frequently subject to a company's
-# data-handling/security-review policy before they're allowed on a work
-# laptop. Confirm Claude Code is approved before installing.
+# Restricted installs: some Macs block new command-line tools. If this one is
+# blocked, ask whoever manages your Mac.
 # The @latest channel cask conflicts with the stable `claude-code` cask (both
 # own the `claude` binary), so a machine runs exactly one of them.
 cask "claude-code@latest"
-# MDM: dev-tool installs sometimes need IT approval on a locked-down
-# fleet, and some companies mandate a specific hardened/managed build of
-# VS Code instead of the vanilla cask.
+# Restricted installs: dev-tool installs are sometimes blocked on a Mac that
+# restricts software. Skip this line if VS Code is already installed.
 cask "visual-studio-code"
-# MDM: Slack is very often pushed by IT already (SSO-enrolled, managed
-# updates). Installing this cask on top of an existing managed install is
-# usually harmless but redundant - check first.
+# Restricted installs: Slack may already be installed another way. Installing
+# this cask on top of an existing install is usually harmless but redundant -
+# check first.
 cask "slack"
 
 # ---- Fonts ----
-# MDM: font casks are generally low-risk and rarely blocked, but font
-# installation still needs a Homebrew-managed /Library or ~/Library path,
-# which some strict endpoint-security tools flag on first install.
+# Restricted installs: font casks are generally low-risk and rarely blocked,
+# but font installation still needs a Homebrew-managed /Library or ~/Library
+# path, which some strict security tools flag on first install.
 #
 # This is the one font iTerm2's Anthropic profile actually references.
 # (A second "mono" variant used to be listed here too; it's gone because
@@ -97,8 +92,8 @@ cask "font-fira-code-nerd-font"
 # - tap "schpet/tap" and brew "schpet/tap/linear": the official Linear
 #   MCP server (https://mcp.linear.app/mcp) does everything this CLI did
 #   for Claude-driven work, without needing a git branch or a browser
-#   tab open. Dropping the tap is also a small security win on a managed
-#   laptop: one less third-party (non-Homebrew-core) source trusted.
+#   tab open. Dropping the tap is also a small security win: one less
+#   third-party (non-Homebrew-core) source trusted.
 # - git-town, pre-commit: branch-workflow and commit-hook tooling for
 #   people writing and reviewing code by hand.
 # - neovim, tmux: a terminal text editor and a terminal multiplexer.
@@ -109,10 +104,10 @@ cask "font-fira-code-nerd-font"
 # - base64, sevenzip, mmv, imagemagick: command-line file/archive/image
 #   utilities meant to be typed and scripted by hand.
 # - cask "claude" (the Claude desktop app) and cask "gpg-suite-no-mail":
-#   neither is needed for the CLI-driven workflow this laptop is set up
+#   neither is needed for the CLI-driven workflow this Mac is set up
 #   for, and gpg-suite-no-mail installs a macOS system extension, which
-#   is one of the things most likely to be blocked outright on a
-#   managed Mac.
+#   is one of the things most likely to be blocked outright on a Mac that
+#   restricts installs.
 # - actionlint, mprocs, pnpm, pyright, uv: already moved to mise before
 #   this rewrite (see ~/.config/mise/config.toml); developer-only tools
 #   regardless.
