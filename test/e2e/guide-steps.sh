@@ -74,6 +74,25 @@ covers() { printf '%s\n' "$1" >>"$OUT/covered.txt"; }
 
 strip_ansi() { perl -pe 'BEGIN { $| = 1 } s/\e\[[0-9;?]*[ -\/]*[@-~]//g; s/\e\][^\a]*(\a|\e\\)//g; s/\r//g'; }
 
+# run_expect RAW TXT expect-args...   run expect with its output sent to the file RAW (not a
+# pipe), show it live ANSI-stripped, and leave the stripped copy in TXT. Sets EXPECT_RC.
+# A file, not a pipe, on purpose: a cask can leave a daemon behind (1Password's
+# `op daemon` did) that inherits expect's stdout, and a pipe held open by a daemon
+# would hang `expect | tee` forever after the command itself had finished.
+run_expect() {
+  local raw="$1" txt="$2"; shift 2
+  : >"$raw"
+  tail -n +1 -f "$raw" 2>/dev/null | strip_ansi &
+  local tail_pids=$!
+  /usr/bin/expect "$@" >"$raw" 2>&1
+  EXPECT_RC=$?
+  sleep 1
+  pkill -P $$ -x tail 2>/dev/null
+  kill "$tail_pids" 2>/dev/null
+  wait "$tail_pids" 2>/dev/null
+  strip_ansi <"$raw" >"$txt"
+}
+
 # pty NAME TIMEOUT CMD [PROMPT ANSWER]...   run CMD in an interactive login zsh on a pty.
 # Sets PTY_RC (exit status) and PTY_TXT (path of the ANSI-stripped transcript).
 pty() {
@@ -81,8 +100,8 @@ pty() {
   PTY_TXT="$OUT/$name.txt"
   printf '\n--- [%s] $ %s\n' "$name" "$cmd"
   # Streamed live (raw transcript kept, stripped copy shown and saved).
-  /usr/bin/expect "$E2E_DIR/pty-run.exp" "$to" "$cmd" "$@" 2>&1 | tee "$OUT/$name.raw" | strip_ansi | tee "$PTY_TXT"
-  PTY_RC="${PIPESTATUS[0]}"
+  run_expect "$OUT/$name.raw" "$PTY_TXT" "$E2E_DIR/pty-run.exp" "$to" "$cmd" "$@"
+  PTY_RC="$EXPECT_RC"
   printf -- '--- [%s] exit %s\n' "$name" "$PTY_RC"
 }
 g_pty() { covers "$3"; pty "$@"; }               # a guide command, with prompts
@@ -93,8 +112,8 @@ session() {
   local name="$1" to="$2"; shift 2
   SESSION_TXT="$OUT/$name.txt"
   printf '\n--- [%s] interactive session\n' "$name"
-  /usr/bin/expect "$E2E_DIR/pty-session.exp" "$to" "$@" 2>&1 | tee "$OUT/$name.raw" | strip_ansi | tee "$SESSION_TXT"
-  SESSION_RC="${PIPESTATUS[0]}"
+  run_expect "$OUT/$name.raw" "$SESSION_TXT" "$E2E_DIR/pty-session.exp" "$to" "$@"
+  SESSION_RC="$EXPECT_RC"
   printf -- '--- [%s] exit %s\n' "$name" "$SESSION_RC"
 }
 vval() { sed -n "s/^V:$1=//p" "$2" | head -1; }     # value printed by "echo V:NAME=..." in a session
