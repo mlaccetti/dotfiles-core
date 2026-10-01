@@ -2,17 +2,24 @@
 # test/e2e/run.sh
 #
 # End-to-end test of the setup guide, on your Mac (the host), in a fresh
-# throwaway macOS VM that looks like a Mac where the apps are already installed. One command:
+# throwaway macOS VM. One command:
 #
-#     test/e2e/run.sh
+#     test/e2e/run.sh [preinstalled|fresh|all] [--rebuild] [--keep]
+#
+# Two scenarios (default: preinstalled):
+#   preinstalled  a Mac where iTerm2, VS Code, 1Password, op and Claude Code are
+#                 already installed, none of them through Homebrew
+#   fresh         a Mac with Homebrew and nothing else: setup must install everything
 #
 # What it does:
 #   1. checks prerequisites (Apple silicon, Tart, ssh, free disk)
 #   2. check-guide-coverage.py: every command on the guide is tested or skipped
 #      with a reason (fails here, before any VM boots, if the guide changed),
 #      then the unit tests in test/unit
-#   3. builds the "her-sandbox-ready" VM if it does not exist (slow, once)
-#   4. clones it to e2e-<timestamp> (copy-on-write, seconds), boots it headless
+#   3. preinstalled only: builds the "sandbox-preinstalled" VM if it does not
+#      exist (slow, once). fresh clones "sandbox-base" (Homebrew only) directly.
+#   4. clones the scenario's VM to sandbox-run-<scenario>-<timestamp>
+#      (copy-on-write, seconds), boots it headless
 #   5. copies the in-VM scripts in and runs prepare-run.sh, then guide-steps.sh
 #   6. copies the report back, checks that every declared command really ran
 #   7. deletes the clone (unless --keep) and exits non-zero on any failure
@@ -30,26 +37,33 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 BASE_IMAGE="${E2E_BASE_IMAGE:-ghcr.io/cirruslabs/macos-tahoe-base:latest}"
-BASE_VM="${E2E_BASE_VM:-her-sandbox-base}"
-READY_VM="${E2E_READY_VM:-her-sandbox-ready}"
+BASE_VM="${E2E_BASE_VM:-sandbox-base}"
+PREINSTALLED_VM="${E2E_PREINSTALLED_VM:-sandbox-preinstalled}"
 MIN_FREE_GB_RUN=25
 MIN_FREE_GB_BUILD=60
 
 KEEP=0
 REBUILD=0
 REPORT_DIR=""
+SCENARIOS=""
 while [ $# -gt 0 ]; do
   case "$1" in
+    preinstalled | fresh | all) [ -z "$SCENARIOS" ] || { echo "only one scenario may be given" >&2; exit 2; }; SCENARIOS="$1" ;;
     --keep) KEEP=1 ;;
     --rebuild) REBUILD=1 ;;
     --report-dir) shift; REPORT_DIR="${1:-}" ;;
     -h | --help)
       cat <<'USAGE'
-Usage: test/e2e/run.sh [--keep] [--rebuild] [--report-dir DIR]
+Usage: test/e2e/run.sh [preinstalled|fresh|all] [--keep] [--rebuild] [--report-dir DIR]
 
-  --keep          leave the e2e-<timestamp> VM running/on disk for debugging
-  --rebuild       delete and rebuild her-sandbox-ready from her-sandbox-base
-  --report-dir D  write the report to D (default: test/e2e/reports/<timestamp>)
+  preinstalled    (default) apps already installed, none through Homebrew
+  fresh           Homebrew only; the guide's setup must install everything
+  all             both, one after the other
+
+  --keep          leave the sandbox-run-<scenario>-<timestamp> VM on disk for debugging
+  --rebuild       delete and rebuild sandbox-preinstalled from sandbox-base
+                  (no effect on fresh, which clones sandbox-base directly)
+  --report-dir D  write the reports to D/<scenario> (default: test/e2e/reports/<timestamp>/<scenario>)
 
 Exit status: 0 = every check passed, 1 = a check failed, 2 = could not run.
 USAGE
@@ -60,10 +74,12 @@ USAGE
   shift
 done
 
+[ -n "$SCENARIOS" ] || SCENARIOS=preinstalled
 STAMP="$(date +%Y%m%d-%H%M%S)"
-RUN_VM="e2e-${STAMP}"
-[ -n "$REPORT_DIR" ] || REPORT_DIR="$HERE/reports/$STAMP"
-mkdir -p "$REPORT_DIR" || exit 2
+RUN_VM=""
+REPORTS_ROOT="${REPORT_DIR:-$HERE/reports/$STAMP}"
+REPORT_DIR="$REPORTS_ROOT"
+mkdir -p "$REPORTS_ROOT" || exit 2
 
 log() { printf '\n==> %s\n' "$*"; }
 die() { printf 'run.sh: %s\n' "$*" >&2; exit 2; }
@@ -129,83 +145,128 @@ for tool in ssh scp python3 awk; do command -v "$tool" >/dev/null 2>&1 || die "$
 echo "tart $(tart --version)"
 FREE="$(free_gb)"
 need="$MIN_FREE_GB_RUN"
-if [ "$REBUILD" -eq 1 ] || ! vm_exists "$READY_VM"; then need="$MIN_FREE_GB_BUILD"; fi
+if ! vm_exists "$BASE_VM"; then
+  need="$MIN_FREE_GB_BUILD"
+elif [ "$SCENARIOS" != fresh ] && { [ "$REBUILD" -eq 1 ] || ! vm_exists "$PREINSTALLED_VM"; }; then
+  need="$MIN_FREE_GB_BUILD"
+fi
 [ "${FREE:-0}" -ge "$need" ] || die "only ${FREE}GB free, need ${need}GB (see README: disk needs)"
 echo "free disk: ${FREE}GB (need ${need}GB)"
 
 # ---------------------------------------------------------------- 2. guide coverage
 log "Guide coverage (every command on the guide is tested or skipped with a reason)"
-python3 "$HERE/check-guide-coverage.py" | tee "$REPORT_DIR/coverage-static.txt"
+python3 "$HERE/check-guide-coverage.py" | tee "$REPORTS_ROOT/coverage-static.txt"
 [ "${PIPESTATUS[0]}" -eq 0 ] || die "guide coverage check failed: update test/e2e/guide-steps.sh or the skip list in check-guide-coverage.py"
 
 # ---------------------------------------------------------------- 2b. unit tests
 log "Unit tests (test/unit, seconds, no VM)"
 for t in "$HERE"/../unit/*.sh; do
-  bash "$t" 2>&1 | tee -a "$REPORT_DIR/unit.txt"
+  bash "$t" 2>&1 | tee -a "$REPORTS_ROOT/unit.txt"
   [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "run.sh: unit test failed: $t" >&2; exit 1; }
 done
 
-# ---------------------------------------------------------------- 3. her-sandbox-ready
-if [ "$REBUILD" -eq 1 ] && vm_exists "$READY_VM"; then
-  log "Rebuilding: deleting $READY_VM"
-  tart delete "$READY_VM" || die "could not delete $READY_VM"
-fi
-if ! vm_exists "$READY_VM"; then
-  log "Building $READY_VM (one time; the first image pull is about 33 GB)"
+# ---------------------------------------------------------------- 3. the preinstalled image
+# The Cirrus base image is a Mac with Homebrew and no apps (checked: no iTerm2,
+# VS Code, 1Password, op, Claude or Nerd Font). The fresh scenario therefore
+# clones sandbox-base as it is. The preinstalled scenario needs the apps put on
+# first, which is slow, so it is done once and kept as sandbox-preinstalled.
+build_preinstalled() {
+  if [ "$REBUILD" -eq 1 ] && vm_exists "$PREINSTALLED_VM"; then
+    log "Rebuilding: deleting $PREINSTALLED_VM"
+    tart delete "$PREINSTALLED_VM" || die "could not delete $PREINSTALLED_VM"
+  fi
+  vm_exists "$PREINSTALLED_VM" && return 0
+  log "Building $PREINSTALLED_VM (one time; the first image pull is about 33 GB)"
   if ! vm_exists "$BASE_VM"; then
     tart clone "$BASE_IMAGE" "$BASE_VM" || die "could not pull $BASE_IMAGE"
   fi
   # Provision a throwaway clone, never the base: the base must stay the vendor
   # image so a rebuild always proves the script from a clean start.
-  BUILD_VM="her-sandbox-build-${STAMP}"
-  tart clone "$BASE_VM" "$BUILD_VM" || die "could not clone $BASE_VM"
-  CURRENT_VM="$BUILD_VM"
-  boot_vm "$BUILD_VM"
-  vm_scp "$HERE/provision-her-state.sh" "admin@$VM_IP:provision-her-state.sh" || die "could not copy the provisioning script"
-  vm_ssh "$VM_IP" 'bash ~/provision-her-state.sh' 2>&1 | tee "$REPORT_DIR/provision.log"
-  [ "${PIPESTATUS[0]}" -eq 0 ] || die "provisioning failed (see $REPORT_DIR/provision.log)"
-  tart stop "$BUILD_VM" >/dev/null 2>&1
-  tart rename "$BUILD_VM" "$READY_VM" || die "could not rename $BUILD_VM to $READY_VM"
+  local build_vm="sandbox-build-${STAMP}"
+  tart clone "$BASE_VM" "$build_vm" || die "could not clone $BASE_VM"
+  CURRENT_VM="$build_vm"
+  boot_vm "$build_vm"
+  vm_scp "$HERE/provision-preinstalled.sh" "admin@$VM_IP:provision-preinstalled.sh" || die "could not copy the provisioning script"
+  vm_ssh "$VM_IP" 'bash ~/provision-preinstalled.sh' 2>&1 | tee "$REPORTS_ROOT/provision.log"
+  [ "${PIPESTATUS[0]}" -eq 0 ] || die "provisioning failed (see $REPORTS_ROOT/provision.log)"
+  tart stop "$build_vm" >/dev/null 2>&1
+  tart rename "$build_vm" "$PREINSTALLED_VM" || die "could not rename $build_vm to $PREINSTALLED_VM"
   CURRENT_VM=""
-fi
+}
 
-# ---------------------------------------------------------------- 4. fresh run VM
-log "Fresh VM: $RUN_VM (clone of $READY_VM)"
-tart clone "$READY_VM" "$RUN_VM" || die "could not clone $READY_VM"
-CURRENT_VM="$RUN_VM"
-boot_vm "$RUN_VM"
-echo "booted, ip $VM_IP"
+# ---------------------------------------------------------------- 4-6. one scenario
+# run_scenario NAME: sets SCENARIO_RESULT (0 = pass, 1 = a check failed).
+run_scenario() {
+  local scen="$1" source_vm
+  case "$scen" in
+    preinstalled) build_preinstalled; source_vm="$PREINSTALLED_VM" ;;
+    fresh)
+      vm_exists "$BASE_VM" || { log "Pulling $BASE_IMAGE as $BASE_VM (about 33 GB)"; tart clone "$BASE_IMAGE" "$BASE_VM" || die "could not pull $BASE_IMAGE"; }
+      source_vm="$BASE_VM" ;;
+  esac
+  REPORT_DIR="$REPORTS_ROOT/$scen"
+  mkdir -p "$REPORT_DIR" || die "could not create $REPORT_DIR"
+  SCENARIO_RESULT=0
 
-# ---------------------------------------------------------------- 5. run
-log "Copying the in-VM scripts"
-vm_ssh "$VM_IP" 'rm -rf ~/e2e ~/e2e-out && mkdir -p ~/e2e' || die "could not prepare ~/e2e in the VM"
-vm_scp "$HERE/prepare-run.sh" "$HERE/guide-steps.sh" "$HERE/stub-gateway.py" "$HERE/pty-run.exp" "$HERE/pty-session.exp" \
-  "admin@$VM_IP:e2e/" || die "could not copy scripts into the VM"
+  RUN_VM="sandbox-run-${scen}-${STAMP}"
+  log "[$scen] Fresh VM: $RUN_VM (clone of $source_vm)"
+  tart clone "$source_vm" "$RUN_VM" || die "could not clone $source_vm"
+  CURRENT_VM="$RUN_VM"
+  boot_vm "$RUN_VM"
+  echo "booted, ip $VM_IP"
 
+  log "[$scen] Copying the in-VM scripts"
+  vm_ssh "$VM_IP" 'rm -rf ~/e2e ~/e2e-out && mkdir -p ~/e2e' || die "could not prepare ~/e2e in the VM"
+  vm_scp "$HERE/prepare-run.sh" "$HERE/guide-steps.sh" "$HERE/stub-gateway.py" "$HERE/pty-run.exp" "$HERE/pty-session.exp" \
+    "admin@$VM_IP:e2e/" || die "could not copy scripts into the VM"
+
+  log "[$scen] prepare-run.sh (make the VM faithful)"
+  vm_ssh "$VM_IP" "E2E_SCENARIO=$scen bash ~/e2e/prepare-run.sh" 2>&1 | tee "$REPORT_DIR/prepare-run.log"
+  if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+    echo "run.sh: prepare-run.sh failed" >&2
+    SCENARIO_RESULT=1
+  fi
+
+  if [ "$SCENARIO_RESULT" -eq 0 ]; then
+    log "[$scen] guide-steps.sh (the guide, in order)"
+    vm_ssh "$VM_IP" "E2E_SCENARIO=$scen bash ~/e2e/guide-steps.sh" 2>&1 | tee "$REPORT_DIR/guide-steps.log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || SCENARIO_RESULT=1
+  fi
+
+  log "[$scen] Collecting the report"
+  vm_scp "admin@$VM_IP:e2e-out" "$REPORT_DIR/" >/dev/null 2>&1 || echo "run.sh: could not copy ~/e2e-out back" >&2
+  if [ -s "$REPORT_DIR/e2e-out/covered.txt" ]; then
+    python3 "$HERE/check-guide-coverage.py" --executed "$REPORT_DIR/e2e-out/covered.txt" | tee "$REPORT_DIR/coverage.txt"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || SCENARIO_RESULT=1
+  fi
+
+  log "[$scen] Result"
+  if [ -s "$REPORT_DIR/e2e-out/summary.txt" ]; then cat "$REPORT_DIR/e2e-out/summary.txt"; fi
+  echo "report: $REPORT_DIR"
+  if [ "$SCENARIO_RESULT" -eq 0 ]; then echo "e2e[$scen]: PASS"; else echo "e2e[$scen]: FAIL"; fi
+
+  # Delete this scenario's clone now (unless --keep), so two scenarios never
+  # hold two clones at once.
+  if [ "$KEEP" -eq 1 ]; then
+    echo "run.sh: --keep given, leaving VM $RUN_VM (delete with: tart stop $RUN_VM; tart delete $RUN_VM)"
+    CURRENT_VM=""
+  else
+    tart stop "$RUN_VM" >/dev/null 2>&1
+    tart delete "$RUN_VM" >/dev/null 2>&1 && echo "run.sh: deleted VM $RUN_VM"
+    CURRENT_VM=""
+  fi
+}
+
+if [ "$SCENARIOS" = all ]; then LIST="preinstalled fresh"; else LIST="$SCENARIOS"; fi
 RESULT=0
-log "prepare-run.sh (make the VM faithful)"
-vm_ssh "$VM_IP" 'bash ~/e2e/prepare-run.sh' 2>&1 | tee "$REPORT_DIR/prepare-run.log"
-if [ "${PIPESTATUS[0]}" -ne 0 ]; then
-  echo "run.sh: prepare-run.sh failed" >&2
-  RESULT=1
-fi
-
-if [ "$RESULT" -eq 0 ]; then
-  log "guide-steps.sh (the guide, in order)"
-  vm_ssh "$VM_IP" 'bash ~/e2e/guide-steps.sh' 2>&1 | tee "$REPORT_DIR/guide-steps.log"
-  [ "${PIPESTATUS[0]}" -eq 0 ] || RESULT=1
-fi
-
-# ---------------------------------------------------------------- 6. report
-log "Collecting the report"
-vm_scp "admin@$VM_IP:e2e-out" "$REPORT_DIR/" >/dev/null 2>&1 || echo "run.sh: could not copy ~/e2e-out back" >&2
-if [ -s "$REPORT_DIR/e2e-out/covered.txt" ]; then
-  python3 "$HERE/check-guide-coverage.py" --executed "$REPORT_DIR/e2e-out/covered.txt" | tee "$REPORT_DIR/coverage.txt"
-  [ "${PIPESTATUS[0]}" -eq 0 ] || RESULT=1
-fi
+SUMMARY=""
+for scen in $LIST; do
+  run_scenario "$scen"
+  SUMMARY="${SUMMARY}  ${scen}: $([ "$SCENARIO_RESULT" -eq 0 ] && echo PASS || echo FAIL)"$'\n'
+  [ "$SCENARIO_RESULT" -eq 0 ] || RESULT=1
+done
 
 log "Result"
-if [ -s "$REPORT_DIR/e2e-out/summary.txt" ]; then cat "$REPORT_DIR/e2e-out/summary.txt"; fi
-echo "report: $REPORT_DIR"
+printf '%s' "$SUMMARY"
 if [ "$RESULT" -eq 0 ]; then echo "e2e: PASS"; else echo "e2e: FAIL"; fi
 exit "$RESULT"

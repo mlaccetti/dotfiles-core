@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # prepare-run.sh
 #
-# Runs INSIDE a fresh clone of her-sandbox-ready, before the guide starts.
-# provision-her-state.sh put the VM in the starting state (apps already installed). This script makes the
-# run faithful rather than easy: it removes everything the Cirrus CI image
-# ships that would hide a missing-dependency bug, and gives the shell exactly
+# Runs INSIDE a fresh clone (sandbox-preinstalled or sandbox-base), before the guide
+# starts. E2E_SCENARIO says which: "preinstalled" (default) or "fresh".
+# provision-preinstalled.sh put the preinstalled VM in its starting state (apps already
+# installed); the fresh VM is the untouched Cirrus image (Homebrew, no apps). This
+# script makes the run faithful rather than easy: it removes everything the Cirrus CI
+# image ships that would hide a missing-dependency bug, and gives the shell exactly
 # the startup files a typical Mac has.
 #
 #   1. brew update (Phoenix runs current Homebrew; the image's is old)
 #   2. uninstall the image's CI tooling (jq, gh, mise, node, ...), so that every
 #      tool used after setup was provided BY the setup
-#   3. ~/.zprofile = the Homebrew installer's line; ~/.zshrc = the native
-#      Claude installer's PATH line; nothing else
+#   3. ~/.zprofile = the Homebrew installer's line. preinstalled only: ~/.zshrc =
+#      the native Claude installer's PATH line. fresh: no ~/.zshrc at all.
 #
 # Not idempotent by design: it runs once per throwaway clone.
 # No credentials are used.
@@ -22,6 +24,10 @@ set -uo pipefail
 log()  { printf '\n==> %s\n' "$*"; }
 fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
 removed() { printf 'REMOVED\t%s\t%s\n' "$1" "$2"; }
+
+SCENARIO="${E2E_SCENARIO:-preinstalled}"
+case "$SCENARIO" in preinstalled | fresh) ;; *) fail "unknown E2E_SCENARIO '$SCENARIO'" ;; esac
+echo "scenario: $SCENARIO"
 
 BREW=/opt/homebrew/bin/brew
 [ -x "$BREW" ] || fail "no Homebrew at $BREW"
@@ -94,11 +100,12 @@ for tap in $("$BREW" tap 2>/dev/null); do
   if "$BREW" untap --force "$tap" >/dev/null 2>&1; then removed "brew tap $tap" "image CI tap; Homebrew 7 warns about untrusted taps on every command"; fi
 done
 
-# Non-brew copies. /usr/local/bin/op is the vendor-installed 1Password CLI the scenario starts with: keep.
+# Non-brew copies. preinstalled: /usr/local/bin/op is the vendor-installed 1Password CLI
+# the scenario starts with, so keep it. fresh: there must be no op at all.
 for f in /usr/local/bin/*; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in
-    op) ;;
+    op) if [ "$SCENARIO" = fresh ]; then sudo rm -f "$f" && removed "$f" "fresh Mac has no 1Password CLI"; fi ;;
     git-credential-manager | git-credential-manager-core)
       sudo rm -f "$f" && removed "$f" "leftover from the removed cask" ;;
     jq | gh | yq | mise | node | npm | npx | rbenv | aws | git-lfs | chezmoi | fzf | bat | rg)
@@ -112,7 +119,7 @@ done
 for f in "$HOME/.local/bin"/*; do
   [ -e "$f" ] || continue
   case "$(basename "$f")" in
-    claude) ;;
+    claude) if [ "$SCENARIO" = fresh ]; then rm -f "$f" && removed "$f" "fresh Mac has no Claude Code"; fi ;;
     *) rm -f "$f" && removed "$f" "not part of a typical Mac" ;;
   esac
 done
@@ -128,10 +135,16 @@ removed "$HOME/.gitconfig contents" "credential-manager/LFS sections from the re
 log "Shell startup files"
 # Exactly what the Homebrew installer tells you to add to ~/.zprofile.
 printf '%s\n' 'eval "$(/opt/homebrew/bin/brew shellenv)"' >"$HOME/.zprofile"
-# Exactly what the Claude Code native installer tells you to add.
-printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >"$HOME/.zshrc"
 echo "--- ~/.zprofile"; cat "$HOME/.zprofile"
-echo "--- ~/.zshrc";    cat "$HOME/.zshrc"
+if [ "$SCENARIO" = preinstalled ]; then
+  # Exactly what the Claude Code native installer tells you to add.
+  printf '%s\n' 'export PATH="$HOME/.local/bin:$PATH"' >"$HOME/.zshrc"
+  echo "--- ~/.zshrc"; cat "$HOME/.zshrc"
+else
+  # A Mac with only Homebrew has no ~/.zshrc until the setup writes one.
+  if [ -e "$HOME/.zshrc" ]; then rm -f "$HOME/.zshrc" && removed "$HOME/.zshrc" "fresh Mac has no ~/.zshrc"; fi
+  echo "--- ~/.zshrc: absent"
+fi
 
 # ---------------------------------------------------------------- verify
 log "Verify the starting state"
@@ -139,7 +152,7 @@ errs=0
 say() { printf '%s\n' "$*"; }
 
 # Tools the setup must provide. In a login interactive zsh none may resolve.
-for t in jq gh yq mise node npm npx rbenv aws git-lfs chezmoi fzf bat rg sf; do
+for t in jq gh yq mise node npm npx rbenv aws git-lfs chezmoi fzf bat rg; do
   where="$(zsh -lic "command -v $t" </dev/null 2>/dev/null | tail -1)"
   # macOS itself ships /usr/bin/jq (since macOS 15), so that one is legitimate.
   if [ "$t" = jq ] && [ "$where" = /usr/bin/jq ]; then
@@ -156,8 +169,25 @@ done
 resolved="$(zsh -lic 'command -v claude brew' </dev/null 2>/dev/null)"
 say "zsh -lic 'command -v claude brew':"
 say "$resolved"
-case "$resolved" in *"$HOME/.local/bin/claude"*) ;; *) say "FAIL: claude does not resolve"; errs=$((errs + 1)) ;; esac
 case "$resolved" in */opt/homebrew/bin/brew*) ;; *) say "FAIL: brew does not resolve"; errs=$((errs + 1)) ;; esac
+if [ "$SCENARIO" = preinstalled ]; then
+  case "$resolved" in *"$HOME/.local/bin/claude"*) ;; *) say "FAIL: claude does not resolve"; errs=$((errs + 1)) ;; esac
+else
+  # fresh: nothing the setup is meant to install may exist yet.
+  for t in claude op code; do
+    where="$(zsh -lic "command -v $t" </dev/null 2>/dev/null | tail -1)"
+    if [ -n "$where" ]; then say "FAIL: '$t' already resolves to $where"; errs=$((errs + 1)); fi
+  done
+  for app in "iTerm.app" "Visual Studio Code.app" "1Password.app" "Claude.app"; do
+    if [ -e "/Applications/$app" ]; then say "FAIL: /Applications/$app already exists"; errs=$((errs + 1)); fi
+  done
+  # shellcheck disable=SC2010
+  if ls "$HOME/Library/Fonts" /Library/Fonts 2>/dev/null | grep -qi nerd; then say "FAIL: a Nerd Font is already installed"; errs=$((errs + 1)); fi
+  for c in iterm2 visual-studio-code 1password 1password-cli claude-code 'claude-code@latest' claude font-fira-code-nerd-font; do
+    if "$BREW" list --cask "$c" >/dev/null 2>&1; then say "FAIL: cask $c is already installed"; errs=$((errs + 1)); fi
+  done
+  [ "$errs" -eq 0 ] && say "fresh: no iTerm2, VS Code, 1Password, op, Claude Code, Claude desktop or Nerd Font present"
+fi
 
 if pgrep -x iTerm2 >/dev/null 2>&1; then say "FAIL: iTerm2 is running"; errs=$((errs + 1)); fi
 if [ -n "$(git config --global --get user.name 2>/dev/null)" ]; then say "FAIL: git identity already set"; errs=$((errs + 1)); fi
