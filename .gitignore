@@ -1,2 +1,5 @@
 .DS_Store
 test/e2e/reports/
+
+# Local agent worktrees (never commit)
+.worktrees/
