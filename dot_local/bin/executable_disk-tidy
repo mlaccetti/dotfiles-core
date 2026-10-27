@@ -98,10 +98,13 @@ default_ref() { # REPO -> origin/<default branch>
 # True if the worktree holds an untracked .env or database file anywhere,
 # including inside ignored folders.
 has_untracked_keepers() { # WORKTREE
-  find "$1" \( -name node_modules -o -name .git \) -prune -o -type f \
-    \( -name ".env*" -o -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) -print 2>/dev/null |
-  while IFS= read -r k; do
-    gitq -C "$1" ls-files --error-unmatch -- "$k" >/dev/null 2>&1 || { echo y; break; }
+  # Fails closed: a find error, or any match git does not track, keeps it.
+  # Names are matched literally so a "[" or "*" in one cannot hit a tracked file.
+  found="$(find "$1" \( -name node_modules -o -name .git \) -prune -o ! -type d \
+    \( -iname ".env*" -o -iname "*.db" -o -iname "*.sqlite" -o -iname "*.sqlite3" \) -print 2>/dev/null)" || return 0
+  [ -n "$found" ] || return 1
+  printf "%s\n" "$found" | while IFS= read -r k; do
+    gitq --literal-pathspecs -C "$1" ls-files --error-unmatch -- "$k" >/dev/null 2>&1 || { echo y; break; }
   done | grep -q y
 }
 

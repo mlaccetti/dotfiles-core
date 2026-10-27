@@ -123,12 +123,25 @@ printf "X=1\n" >"$REPO/.env.example" && g add -f .env.example && g commit -m exa
 g worktree add -b example "$WT/example" main
 old "$WT/example"
 
+# An untracked "data[1].db" must not count as tracked because "data1.db" is.
+printf "*.db\n" >>"$REPO/.gitignore" && touch "$REPO/data1.db" && g add .gitignore && g add -f data1.db && g commit -m db && g push origin main
+g worktree add -b globname "$WT/globname" main
+touch "$WT/globname/data[1].db"
+old "$WT/globname"
+
+# A .env that is a symlink is still local state.
+g worktree add -b envlink "$WT/envlink" main
+touch "$TMP/real.env" && ln -s "$TMP/real.env" "$WT/envlink/.env"
+old "$WT/envlink"
+
 "$TIDY" --only worktrees --apply >/dev/null
 present "keeps worktree with a checkout nested inside" "$WT/outer/.worktrees/inner/WORK.txt"
 present "keeps untracked file when showUntrackedFiles=no" "$WT/hidden/NOTES.md"
 present "keeps worktree holding an ignored .env" "$WT/withenv/.env"
 present "keeps database inside an ignored folder" "$WT/withdb/data/app.sqlite"
 absent "tracked .env.example does not block removal" "$WT/example"
+present "keeps untracked file whose name is a glob of a tracked one" "$WT/globname/data[1].db"
+present "keeps worktree whose .env is a symlink" "$WT/envlink/.env"
 
 # A root given through a symlink is still searched.
 ln -s "$TMP/ws" "$TMP/ws-link"
