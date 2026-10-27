@@ -95,6 +95,16 @@ default_ref() { # REPO -> origin/<default branch>
   printf '%s' "$ref"
 }
 
+# True if the worktree holds an untracked .env or database file anywhere,
+# including inside ignored folders.
+has_untracked_keepers() { # WORKTREE
+  find "$1" \( -name node_modules -o -name .git \) -prune -o -type f \
+    \( -name ".env*" -o -name "*.db" -o -name "*.sqlite" -o -name "*.sqlite3" \) -print 2>/dev/null |
+  while IFS= read -r k; do
+    gitq -C "$1" ls-files --error-unmatch -- "$k" >/dev/null 2>&1 || { echo y; break; }
+  done | grep -q y
+}
+
 # Why a worktree should go, or empty if it stays.
 worktree_reason() { # WORKTREE DEFAULT_REF
   wt="$1"; def="$2"
@@ -105,8 +115,7 @@ worktree_reason() { # WORKTREE DEFAULT_REF
   # would take another checkout nested inside it (its own work could be lost)
   # or ignored files that do not regenerate, such as .env or a local database.
   [ -n "$(find "$wt" -mindepth 2 -name node_modules -prune -o -name .git -print -quit 2>/dev/null)" ] && return
-  gitq -C "$wt" ls-files --others --ignored --exclude-standard --directory 2>/dev/null |
-    grep -Eq "(^|/)\.env|\.(db|sqlite|sqlite3)$" && return
+  has_untracked_keepers "$wt" && return
   activity="$(gitq -C "$wt" rev-parse --git-path logs/HEAD 2>/dev/null)"
   case "$activity" in /*) ;; *) activity="$wt/$activity" ;; esac
   [ -f "$activity" ] || activity="$(gitq -C "$wt" rev-parse --absolute-git-dir)/HEAD"

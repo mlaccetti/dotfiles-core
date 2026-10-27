@@ -112,10 +112,23 @@ g worktree add -b withenv "$WT/withenv" main
 touch "$WT/withenv/.env"
 old "$WT/withenv"
 
+# A database inside an ignored folder, which git lists only as the folder.
+printf "data/\n" >>"$REPO/.gitignore" && g add .gitignore && g commit -m data && g push origin main
+g worktree add -b withdb "$WT/withdb" main
+mkdir -p "$WT/withdb/data" && touch "$WT/withdb/data/app.sqlite"
+old "$WT/withdb"
+
+# A tracked .env.example is not local state and must not block removal.
+printf "X=1\n" >"$REPO/.env.example" && g add -f .env.example && g commit -m example && g push origin main
+g worktree add -b example "$WT/example" main
+old "$WT/example"
+
 "$TIDY" --only worktrees --apply >/dev/null
 present "keeps worktree with a checkout nested inside" "$WT/outer/.worktrees/inner/WORK.txt"
 present "keeps untracked file when showUntrackedFiles=no" "$WT/hidden/NOTES.md"
 present "keeps worktree holding an ignored .env" "$WT/withenv/.env"
+present "keeps database inside an ignored folder" "$WT/withdb/data/app.sqlite"
+absent "tracked .env.example does not block removal" "$WT/example"
 
 # A root given through a symlink is still searched.
 ln -s "$TMP/ws" "$TMP/ws-link"
