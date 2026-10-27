@@ -1,0 +1,297 @@
+#!/usr/bin/env bash
+# disk-tidy: reclaim disk space that developer tools leave behind.
+#
+# Each step uses the tool's own cleanup where one exists and only removes
+# things that are rebuilt or re-downloaded on demand. Nothing with work in it
+# is touched: a git worktree is removed only when it is clean, its branch is
+# merged or deleted upstream, and it has been idle for a while; the branch
+# itself is always kept, so `git worktree add <path> <branch>` brings it back.
+#
+# Usage:
+#   disk-tidy                 show what would be cleaned (dry run)
+#   disk-tidy --apply         clean
+#   disk-tidy --only a,b      run only the named steps (see STEPS below)
+#   disk-tidy schedule        run `disk-tidy --apply` weekly (macOS launchd)
+#   disk-tidy unschedule      remove that schedule
+#
+# STEPS: worktrees logs xcode playwright tools docker transcripts
+#
+# Settings come from the environment or ~/.config/disk-tidy/config (a shell
+# file of VAR=value lines), so the scheduled run uses the same values:
+#   DISK_TIDY_ROOTS             colon-separated folders holding git checkouts
+#                               (default: ~/workspace)
+#   DISK_TIDY_DEPTH             how deep under each root to look for checkouts
+#                               (default: 2)
+#   DISK_TIDY_WORKTREE_IDLE_DAYS  leave worktrees with recent commits or
+#                               checkouts alone, so a just-created worktree
+#                               an agent is about to use survives (default: 2)
+#   DISK_TIDY_LOG_MAX_MB        truncate a single log file above this size
+#                               (default: 1024)
+#   DISK_TIDY_DERIVED_DATA_DAYS remove Xcode DerivedData unused this long
+#                               (default: 14)
+#   DISK_TIDY_TRANSCRIPT_DAYS   remove Codex and Cursor agent transcripts older
+#                               than this (default: 30). Claude Code prunes its
+#                               own through `cleanupPeriodDays` in settings.json.
+#
+# Works with macOS's stock /bin/bash 3.2.
+set -u
+
+cfg="${XDG_CONFIG_HOME:-$HOME/.config}/disk-tidy/config"
+# shellcheck disable=SC1090
+[ -f "$cfg" ] && . "$cfg"
+
+ROOTS="${DISK_TIDY_ROOTS:-$HOME/workspace}"
+DEPTH="${DISK_TIDY_DEPTH:-2}"
+IDLE_DAYS="${DISK_TIDY_WORKTREE_IDLE_DAYS:-2}"
+LOG_MAX_MB="${DISK_TIDY_LOG_MAX_MB:-1024}"
+DD_DAYS="${DISK_TIDY_DERIVED_DATA_DAYS:-14}"
+TRANSCRIPT_DAYS="${DISK_TIDY_TRANSCRIPT_DAYS:-30}"
+ALL_STEPS="worktrees logs xcode playwright tools docker transcripts"
+LABEL="com.dotfiles-core.disk-tidy"
+
+apply=no
+steps="$ALL_STEPS"
+usage() { sed -n '9,16p' "$0" | sed 's/^# \{0,1\}//'; }
+
+say() { printf '%s\n' "$*"; }
+have() { command -v "$1" >/dev/null 2>&1; }
+mtime() { stat -f %m "$1" 2>/dev/null || stat -c %Y "$1" 2>/dev/null || echo 0; }
+free_kb() { df -k "$HOME" | awk 'NR==2 {print $4}'; }
+
+# do_it DESCRIPTION CMD...: run CMD with --apply, otherwise say what would run.
+do_it() {
+  desc="$1"; shift
+  if [ "$apply" = yes ]; then
+    say "  $desc"
+    "$@" || say "  (did not finish: $*)"
+  else
+    say "  would: $desc"
+  fi
+}
+
+# ---------------------------------------------------------------- worktrees
+# Repo config could run commands (fsmonitor, hooks); never let it here.
+gitq() { git -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
+
+busy_dirs=""
+load_busy_dirs() {
+  # Working directories of running processes; a worktree someone is in stays.
+  have lsof && busy_dirs="$(lsof -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | sort -u)"
+}
+is_busy() {
+  [ -n "$busy_dirs" ] || return 1
+  printf '%s\n' "$busy_dirs" | while IFS= read -r d; do
+    case "$d/" in "$1"/*) echo y; break ;; esac
+  done | grep -q y
+}
+
+default_ref() { # REPO -> origin/<default branch>
+  ref="$(gitq -C "$1" symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)"
+  if [ -z "$ref" ]; then
+    for b in main master; do
+      gitq -C "$1" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null && { ref="origin/$b"; break; }
+    done
+  fi
+  printf '%s' "$ref"
+}
+
+# Why a worktree should go, or empty if it stays.
+worktree_reason() { # WORKTREE DEFAULT_REF
+  wt="$1"; def="$2"
+  # Dirty, or status failed: keep. Untracked files count even when the repo hides them.
+  st="$(gitq -C "$wt" status --porcelain --untracked-files=normal --ignore-submodules=none 2>/dev/null)" || return
+  [ -n "$st" ] && return
+  # `git worktree remove` also deletes ignored files. Keep the worktree if that
+  # would take another checkout nested inside it (its own work could be lost)
+  # or ignored files that do not regenerate, such as .env or a local database.
+  [ -n "$(find "$wt" -mindepth 2 -name node_modules -prune -o -name .git -print -quit 2>/dev/null)" ] && return
+  gitq -C "$wt" ls-files --others --ignored --exclude-standard --directory 2>/dev/null |
+    grep -Eq "(^|/)\.env|\.(db|sqlite|sqlite3)$" && return
+  activity="$(gitq -C "$wt" rev-parse --git-path logs/HEAD 2>/dev/null)"
+  case "$activity" in /*) ;; *) activity="$wt/$activity" ;; esac
+  [ -f "$activity" ] || activity="$(gitq -C "$wt" rev-parse --absolute-git-dir)/HEAD"
+  idle=$(( ($(date +%s) - $(mtime "$activity")) / 86400 ))
+  [ "$idle" -lt "$IDLE_DAYS" ] && return
+  branch="$(gitq -C "$wt" symbolic-ref --short -q HEAD)"
+  if [ -n "$def" ] && gitq -C "$wt" merge-base --is-ancestor HEAD "$def" 2>/dev/null; then
+    echo "merged into $def"
+  elif [ -n "$branch" ] && [ "$(gitq -C "$wt" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ]; then
+    echo "branch deleted upstream"
+  fi
+}
+
+tidy_repo() { # PRIMARY_CHECKOUT ROOT
+  repo="$1"; root="$2"
+  gitq -C "$repo" remote get-url origin >/dev/null 2>&1 && gitq -C "$repo" fetch --prune --quiet origin 2>/dev/null
+  def="$(default_ref "$repo")"
+  main="$(cd "$repo" && pwd -P)"
+  gitq -C "$repo" worktree list --porcelain | awk '
+    /^worktree / { if (p != "") print p "\t" l; p = substr($0, 10); l = "" }
+    /^locked/    { l = "locked" }
+    END          { if (p != "") print p "\t" l }' |
+  while IFS="$(printf '\t')" read -r wt locked; do
+    [ "$wt" = "$main" ] && continue
+    [ -d "$wt" ] || continue
+    [ -n "$locked" ] && continue
+    case "$wt/" in "$root"/*) ;; *) continue ;; esac
+    is_busy "$wt" && { say "  keep (in use): $wt"; continue; }
+    reason="$(worktree_reason "$wt" "$def")"
+    [ -n "$reason" ] || continue
+    do_it "remove worktree $wt ($reason)" gitq -C "$repo" worktree remove "$wt"
+  done
+  do_it "prune stale worktree entries in $repo" gitq -C "$repo" worktree prune
+}
+
+step_worktrees() {
+  say "Git worktrees (clean, merged or deleted upstream, idle ${IDLE_DAYS}+ days; branches kept)"
+  have git || return
+  load_busy_dirs
+  old_ifs="$IFS"; IFS=:; set -f
+  for root in $ROOTS; do
+    IFS="$old_ifs"; set +f
+    [ -d "$root" ] || continue
+    root="$(cd "$root" && pwd -P)"
+    find "$root" -maxdepth "$((DEPTH + 1))" -name .git -type d -prune 2>/dev/null |
+      while IFS= read -r g; do tidy_repo "$(dirname "$g")" "$root"; done
+  done
+  IFS="$old_ifs"; set +f
+}
+
+# --------------------------------------------------------------------- logs
+truncate_file() { : >"$1"; }
+step_logs() {
+  say ".log files in ~/Library/Logs over ${LOG_MAX_MB} MB (truncated, not deleted)"
+  dir="$HOME/Library/Logs"
+  [ -d "$dir" ] || return
+  find "$dir" -type f -name "*.log" -size +"${LOG_MAX_MB}"M 2>/dev/null | while IFS= read -r f; do
+    do_it "truncate $f" truncate_file "$f"
+  done
+}
+
+# -------------------------------------------------------------------- xcode
+step_xcode() {
+  have xcrun || return
+  say "Xcode"
+  do_it "delete simulators whose runtime is gone" xcrun simctl delete unavailable
+  dd="$HOME/Library/Developer/Xcode/DerivedData"
+  [ -d "$dd" ] && find "$dd" -mindepth 1 -maxdepth 1 -mtime +"$DD_DAYS" 2>/dev/null |
+    while IFS= read -r d; do do_it "remove DerivedData $(basename "$d")" rm -rf "$d"; done
+}
+
+# --------------------------------------------------------------- playwright
+step_playwright() {
+  # Each Playwright upgrade downloads new browser builds and leaves the old
+  # ones. Keep the newest build of each browser; older ones re-download if a
+  # project pinned to them runs again.
+  for dir in "${PLAYWRIGHT_BROWSERS_PATH:-}" "$HOME/Library/Caches/ms-playwright" "$HOME/.cache/ms-playwright"; do
+    [ -n "$dir" ] && [ -d "$dir" ] || continue
+    say "Playwright browsers in $dir (newest of each kept)"
+    find "$dir" -mindepth 1 -maxdepth 1 -type d -name '*-[0-9]*' | sed 's/-[0-9]*$//' | sort -u |
+      while IFS= read -r family; do
+        find "$dir" -mindepth 1 -maxdepth 1 -type d -name "$(basename "$family")-[0-9]*" |
+          awk -F- '{print $NF "\t" $0}' | sort -n | sed '$d' | cut -f2- |
+          while IFS= read -r old; do do_it "remove $(basename "$old")" rm -rf "$old"; done
+      done
+  done
+}
+
+# -------------------------------------------------------------------- tools
+step_tools() {
+  say "Package managers and toolchains (their own cleanup commands)"
+  have brew       && do_it "brew cleanup" brew cleanup
+  have mise       && do_it "mise prune (tool versions no config uses)" mise prune --yes
+  have pnpm       && do_it "pnpm store prune" pnpm store prune
+  have npm        && do_it "npm cache verify (garbage-collects the cache)" npm cache verify
+  have uv         && do_it "uv cache prune" uv cache prune
+  have pre-commit && do_it "pre-commit gc" pre-commit gc
+}
+
+# ------------------------------------------------------------------- docker
+step_docker() {
+  have docker && docker info >/dev/null 2>&1 || return
+  say "Docker (dangling images and week-old build cache; containers and volumes untouched)"
+  do_it "docker image prune" docker image prune --force
+  do_it "docker builder prune" docker builder prune --force --filter until=168h
+}
+
+# -------------------------------------------------------------- transcripts
+step_transcripts() {
+  say "Agent transcripts older than ${TRANSCRIPT_DAYS} days (Codex, Cursor)"
+  for d in "$HOME/.codex/sessions" "$HOME/.codex/archived_sessions"; do
+    [ -d "$d" ] || continue
+    n="$(find "$d" -type f -name 'rollout-*' -mtime +"$TRANSCRIPT_DAYS" | wc -l | tr -d ' ')"
+    [ "$n" -gt 0 ] && do_it "remove $n Codex transcripts in $d" \
+      find "$d" -type f -name 'rollout-*' -mtime +"$TRANSCRIPT_DAYS" -delete
+  done
+  # A Cursor chat is a folder; remove it only when nothing in it is recent.
+  [ -d "$HOME/.cursor/chats" ] || return
+  find "$HOME/.cursor/chats" -mindepth 2 -maxdepth 2 -type d | while IFS= read -r chat; do
+    recent="$(find "$chat" -type f -mtime -"$TRANSCRIPT_DAYS" -print -quit 2>/dev/null)" || continue
+    [ -z "$recent" ] &&
+      do_it "remove Cursor chat $(basename "$chat")" rm -rf "$chat"
+  done
+}
+
+# ----------------------------------------------------------------- schedule
+plist="$HOME/Library/LaunchAgents/$LABEL.plist"
+schedule() {
+  [ "$(uname)" = Darwin ] || { say "schedule uses launchd (macOS). Elsewhere add a weekly cron entry: $0 --apply"; exit 1; }
+  self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+  # Paths go into XML, so escape the characters XML reserves.
+  xml() { printf "%s" "$1" | sed -e "s/&/\&amp;/g" -e "s/</\&lt;/g" -e "s/>/\&gt;/g"; }
+  self_x="$(xml "$self")"; home_x="$(xml "$HOME")"
+  mkdir -p "$(dirname "$plist")"
+  cat >"$plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>$LABEL</string>
+  <key>ProgramArguments</key><array><string>$self_x</string><string>--apply</string></array>
+  <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>10</integer></dict>
+  <key>EnvironmentVariables</key><dict>
+    <key>PATH</key><string>$home_x/.local/share/mise/shims:$home_x/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>StandardOutPath</key><string>$home_x/Library/Logs/disk-tidy.log</string>
+  <key>StandardErrorPath</key><string>$home_x/Library/Logs/disk-tidy.log</string>
+  <key>LowPriorityIO</key><true/>
+  <key>Nice</key><integer>10</integer>
+</dict>
+</plist>
+PLIST
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null
+  if launchctl bootstrap "gui/$(id -u)" "$plist"; then
+    say "Scheduled: Sundays at 10:00 (or at next wake). Log: ~/Library/Logs/disk-tidy.log"
+  else
+    say "launchd did not load the schedule yet (it may still be unloading the old one). Run: disk-tidy schedule"
+    exit 1
+  fi
+}
+unschedule() {
+  launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null
+  rm -f "$plist" && say "Schedule removed."
+}
+
+# --------------------------------------------------------------------- main
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply) apply=yes ;;
+    --only) shift; steps="$(printf '%s' "${1:-}" | tr ',' ' ')" ;;
+    schedule) schedule; exit ;;
+    unschedule) unschedule; exit ;;
+    -h|--help) usage; exit 0 ;;
+    *) say "Unknown option: $1"; usage >&2; exit 2 ;;
+  esac
+  shift
+done
+
+for s in $steps; do
+  case " $ALL_STEPS " in *" $s "*) ;; *) say "Unknown step: $s (steps: $ALL_STEPS)"; exit 2 ;; esac
+done
+
+say "disk-tidy $(date '+%Y-%m-%d %H:%M')$([ "$apply" = yes ] || printf ' (dry run; --apply to clean)')"
+before="$(free_kb)"
+for s in $steps; do "step_$s"; done
+after="$(free_kb)"
+say ""
+say "Free space: $((before / 1048576)) GB -> $((after / 1048576)) GB"
