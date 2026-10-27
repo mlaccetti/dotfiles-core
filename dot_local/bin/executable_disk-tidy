@@ -70,6 +70,9 @@ do_it() {
 }
 
 # ---------------------------------------------------------------- worktrees
+# Repo config could run commands (fsmonitor, hooks); never let it here.
+gitq() { git -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
+
 busy_dirs=""
 load_busy_dirs() {
   # Working directories of running processes; a worktree someone is in stays.
@@ -83,10 +86,10 @@ is_busy() {
 }
 
 default_ref() { # REPO -> origin/<default branch>
-  ref="$(git -C "$1" symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)"
+  ref="$(gitq -C "$1" symbolic-ref --short -q refs/remotes/origin/HEAD 2>/dev/null)"
   if [ -z "$ref" ]; then
     for b in main master; do
-      git -C "$1" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null && { ref="origin/$b"; break; }
+      gitq -C "$1" rev-parse -q --verify "refs/remotes/origin/$b" >/dev/null && { ref="origin/$b"; break; }
     done
   fi
   printf '%s' "$ref"
@@ -95,26 +98,34 @@ default_ref() { # REPO -> origin/<default branch>
 # Why a worktree should go, or empty if it stays.
 worktree_reason() { # WORKTREE DEFAULT_REF
   wt="$1"; def="$2"
-  [ -n "$(git -C "$wt" status --porcelain 2>/dev/null | head -1)" ] && return
-  activity="$(git -C "$wt" rev-parse --git-path logs/HEAD 2>/dev/null)"
+  # Dirty, or status failed: keep. Untracked files count even when the repo hides them.
+  st="$(gitq -C "$wt" status --porcelain --untracked-files=normal --ignore-submodules=none 2>/dev/null)" || return
+  [ -n "$st" ] && return
+  # `git worktree remove` also deletes ignored files. Keep the worktree if that
+  # would take another checkout nested inside it (its own work could be lost)
+  # or ignored files that do not regenerate, such as .env or a local database.
+  [ -n "$(find "$wt" -mindepth 2 -name node_modules -prune -o -name .git -print -quit 2>/dev/null)" ] && return
+  gitq -C "$wt" ls-files --others --ignored --exclude-standard --directory 2>/dev/null |
+    grep -Eq "(^|/)\.env|\.(db|sqlite|sqlite3)$" && return
+  activity="$(gitq -C "$wt" rev-parse --git-path logs/HEAD 2>/dev/null)"
   case "$activity" in /*) ;; *) activity="$wt/$activity" ;; esac
-  [ -f "$activity" ] || activity="$(git -C "$wt" rev-parse --absolute-git-dir)/HEAD"
+  [ -f "$activity" ] || activity="$(gitq -C "$wt" rev-parse --absolute-git-dir)/HEAD"
   idle=$(( ($(date +%s) - $(mtime "$activity")) / 86400 ))
   [ "$idle" -lt "$IDLE_DAYS" ] && return
-  branch="$(git -C "$wt" symbolic-ref --short -q HEAD)"
-  if [ -n "$def" ] && git -C "$wt" merge-base --is-ancestor HEAD "$def" 2>/dev/null; then
+  branch="$(gitq -C "$wt" symbolic-ref --short -q HEAD)"
+  if [ -n "$def" ] && gitq -C "$wt" merge-base --is-ancestor HEAD "$def" 2>/dev/null; then
     echo "merged into $def"
-  elif [ -n "$branch" ] && [ "$(git -C "$wt" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ]; then
+  elif [ -n "$branch" ] && [ "$(gitq -C "$wt" for-each-ref --format='%(upstream:track)' "refs/heads/$branch")" = "[gone]" ]; then
     echo "branch deleted upstream"
   fi
 }
 
-tidy_repo() { # PRIMARY_CHECKOUT
-  repo="$1"
-  git -C "$repo" remote get-url origin >/dev/null 2>&1 && git -C "$repo" fetch --prune --quiet origin 2>/dev/null
+tidy_repo() { # PRIMARY_CHECKOUT ROOT
+  repo="$1"; root="$2"
+  gitq -C "$repo" remote get-url origin >/dev/null 2>&1 && gitq -C "$repo" fetch --prune --quiet origin 2>/dev/null
   def="$(default_ref "$repo")"
   main="$(cd "$repo" && pwd -P)"
-  git -C "$repo" worktree list --porcelain | awk '
+  gitq -C "$repo" worktree list --porcelain | awk '
     /^worktree / { if (p != "") print p "\t" l; p = substr($0, 10); l = "" }
     /^locked/    { l = "locked" }
     END          { if (p != "") print p "\t" l }' |
@@ -122,37 +133,38 @@ tidy_repo() { # PRIMARY_CHECKOUT
     [ "$wt" = "$main" ] && continue
     [ -d "$wt" ] || continue
     [ -n "$locked" ] && continue
+    case "$wt/" in "$root"/*) ;; *) continue ;; esac
     is_busy "$wt" && { say "  keep (in use): $wt"; continue; }
     reason="$(worktree_reason "$wt" "$def")"
     [ -n "$reason" ] || continue
-    do_it "remove worktree $wt ($reason)" git -C "$repo" worktree remove "$wt"
+    do_it "remove worktree $wt ($reason)" gitq -C "$repo" worktree remove "$wt"
   done
-  do_it "prune stale worktree entries in $repo" git -C "$repo" worktree prune
+  do_it "prune stale worktree entries in $repo" gitq -C "$repo" worktree prune
 }
 
 step_worktrees() {
   say "Git worktrees (clean, merged or deleted upstream, idle ${IDLE_DAYS}+ days; branches kept)"
   have git || return
   load_busy_dirs
-  old_ifs="$IFS"; IFS=:
+  old_ifs="$IFS"; IFS=:; set -f
   for root in $ROOTS; do
-    IFS="$old_ifs"
+    IFS="$old_ifs"; set +f
     [ -d "$root" ] || continue
+    root="$(cd "$root" && pwd -P)"
     find "$root" -maxdepth "$((DEPTH + 1))" -name .git -type d -prune 2>/dev/null |
-      while IFS= read -r g; do tidy_repo "$(dirname "$g")"; done
+      while IFS= read -r g; do tidy_repo "$(dirname "$g")" "$root"; done
   done
-  IFS="$old_ifs"
+  IFS="$old_ifs"; set +f
 }
 
 # --------------------------------------------------------------------- logs
 truncate_file() { : >"$1"; }
 step_logs() {
-  say "Log files over ${LOG_MAX_MB} MB (truncated, not deleted)"
-  for dir in "$HOME/Library/Logs" "$HOME/.local/state"; do
-    [ -d "$dir" ] || continue
-    find "$dir" -type f -size +"${LOG_MAX_MB}"M 2>/dev/null | while IFS= read -r f; do
-      do_it "truncate $f" truncate_file "$f"
-    done
+  say ".log files in ~/Library/Logs over ${LOG_MAX_MB} MB (truncated, not deleted)"
+  dir="$HOME/Library/Logs"
+  [ -d "$dir" ] || return
+  find "$dir" -type f -name "*.log" -size +"${LOG_MAX_MB}"M 2>/dev/null | while IFS= read -r f; do
+    do_it "truncate $f" truncate_file "$f"
   done
 }
 
@@ -214,7 +226,8 @@ step_transcripts() {
   # A Cursor chat is a folder; remove it only when nothing in it is recent.
   [ -d "$HOME/.cursor/chats" ] || return
   find "$HOME/.cursor/chats" -mindepth 2 -maxdepth 2 -type d | while IFS= read -r chat; do
-    [ -z "$(find "$chat" -type f -mtime -"$TRANSCRIPT_DAYS" -print -quit)" ] &&
+    recent="$(find "$chat" -type f -mtime -"$TRANSCRIPT_DAYS" -print -quit 2>/dev/null)" || continue
+    [ -z "$recent" ] &&
       do_it "remove Cursor chat $(basename "$chat")" rm -rf "$chat"
   done
 }
@@ -224,6 +237,9 @@ plist="$HOME/Library/LaunchAgents/$LABEL.plist"
 schedule() {
   [ "$(uname)" = Darwin ] || { say "schedule uses launchd (macOS). Elsewhere add a weekly cron entry: $0 --apply"; exit 1; }
   self="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
+  # Paths go into XML, so escape the characters XML reserves.
+  xml() { printf "%s" "$1" | sed -e "s/&/\&amp;/g" -e "s/</\&lt;/g" -e "s/>/\&gt;/g"; }
+  self_x="$(xml "$self")"; home_x="$(xml "$HOME")"
   mkdir -p "$(dirname "$plist")"
   cat >"$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -231,20 +247,25 @@ schedule() {
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>$self</string><string>--apply</string></array>
+  <key>ProgramArguments</key><array><string>$self_x</string><string>--apply</string></array>
   <key>StartCalendarInterval</key><dict><key>Weekday</key><integer>0</integer><key>Hour</key><integer>10</integer></dict>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$HOME/.local/share/mise/shims:$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>PATH</key><string>$home_x/.local/share/mise/shims:$home_x/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/disk-tidy.log</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/disk-tidy.log</string>
+  <key>StandardOutPath</key><string>$home_x/Library/Logs/disk-tidy.log</string>
+  <key>StandardErrorPath</key><string>$home_x/Library/Logs/disk-tidy.log</string>
   <key>LowPriorityIO</key><true/>
   <key>Nice</key><integer>10</integer>
 </dict>
 </plist>
 PLIST
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null
-  launchctl bootstrap "gui/$(id -u)" "$plist" && say "Scheduled: Sundays at 10:00 (or at next wake). Log: ~/Library/Logs/disk-tidy.log"
+  if launchctl bootstrap "gui/$(id -u)" "$plist"; then
+    say "Scheduled: Sundays at 10:00 (or at next wake). Log: ~/Library/Logs/disk-tidy.log"
+  else
+    say "launchd did not load the schedule yet (it may still be unloading the old one). Run: disk-tidy schedule"
+    exit 1
+  fi
 }
 unschedule() {
   launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null

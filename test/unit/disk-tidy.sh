@@ -90,6 +90,48 @@ for b in merged gone; do
   if git -C "$REPO" rev-parse -q --verify "refs/heads/$b" >/dev/null; then ok "keeps branch $b"; else no "branch $b deleted"; fi
 done
 
+# Regressions from review: each worktree below is clean, merged and idle, so
+# only the named safeguard keeps it.
+
+# A checkout nested inside a worktree (ignored .worktrees/) holds its own work.
+printf '.worktrees/\n' >>"$REPO/.gitignore" && g add .gitignore && g commit -m nested && g push origin main
+g worktree add -b outer "$WT/outer" main
+g worktree add -b inner "$WT/outer/.worktrees/inner" main
+touch "$WT/outer/.worktrees/inner/WORK.txt"
+old "$WT/outer"; old "$WT/outer/.worktrees/inner"
+
+# Untracked work stays visible when the repo hides untracked files.
+g worktree add -b hidden "$WT/hidden" main
+git -C "$WT/hidden" config status.showUntrackedFiles no
+touch "$WT/hidden/NOTES.md"
+old "$WT/hidden"
+
+# Ignored files that do not regenerate.
+printf '.env\n*.sqlite\n' >>"$REPO/.gitignore" && g add .gitignore && g commit -m secrets && g push origin main
+g worktree add -b withenv "$WT/withenv" main
+touch "$WT/withenv/.env"
+old "$WT/withenv"
+
+"$TIDY" --only worktrees --apply >/dev/null
+present "keeps worktree with a checkout nested inside" "$WT/outer/.worktrees/inner/WORK.txt"
+present "keeps untracked file when showUntrackedFiles=no" "$WT/hidden/NOTES.md"
+present "keeps worktree holding an ignored .env" "$WT/withenv/.env"
+
+# A root given through a symlink is still searched.
+ln -s "$TMP/ws" "$TMP/ws-link"
+g worktree add -b vialink "$WT/vialink" main
+old "$WT/vialink"
+DISK_TIDY_ROOTS="$TMP/ws-link" "$TIDY" --only worktrees --apply >/dev/null
+absent "searches a root given as a symlink" "$WT/vialink"
+
+# Non-log files in other state folders are never truncated.
+mkdir -p "$HOME/.local/state/app" "$HOME/Library/Logs/db"
+dd if=/dev/zero of="$HOME/.local/state/app/ledger.jsonl" bs=1048576 count=3 2>/dev/null
+dd if=/dev/zero of="$HOME/Library/Logs/db/data.bin" bs=1048576 count=3 2>/dev/null
+DISK_TIDY_LOG_MAX_MB=2 "$TIDY" --only logs --apply >/dev/null
+if [ -s "$HOME/.local/state/app/ledger.jsonl" ]; then ok "leaves ~/.local/state alone"; else no "truncated ~/.local/state file"; fi
+if [ -s "$HOME/Library/Logs/db/data.bin" ]; then ok "only truncates .log files"; else no "truncated a non-.log file"; fi
+
 # Playwright: newest build of each browser stays.
 PW="$HOME/.cache/ms-playwright"
 mkdir -p "$PW/chromium-1200" "$PW/chromium-1248" "$PW/chromium_headless_shell-1248" "$PW/webkit-2359" "$PW/mcp-chrome"
