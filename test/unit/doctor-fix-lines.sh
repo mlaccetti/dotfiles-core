@@ -39,7 +39,7 @@ BREW
 chmod +x "$TMP/bin/brew"
 
 run_doctor() {
-  HOME="$TMP/home" XDG_CONFIG_HOME="$TMP/home/.config" CHEZMOI_SOURCE_DIR="$REPO" DOCTOR_ZSH_TIMEOUT=5 \
+  HOME="$TMP/home" CHEZMOI_SOURCE_DIR="$REPO" DOCTOR_ZSH_TIMEOUT=5 \
     PATH="$TMP/bin:/usr/bin:/bin:/usr/sbin:/sbin" bash "$REPO/bin/doctor.sh" 2>&1
 }
 
@@ -60,32 +60,16 @@ want   "missing bat is fixed with brew install bat" "Fix:.*Run: brew install bat
 want   "missing claude is fixed with the claude-code@latest cask" "Fix:.*Run: brew install --cask claude-code@latest$"
 refuse "no Fix line says to brew bundle the whole Brewfile" 'Fix:.*brew bundle'
 refuse "no Fix line mentions brew bundle at all" 'brew bundle --file'
-want   "gh App tokens not set up: a PASS, not a WARN" "\[PASS\] Not set up, which is fine: coding agents use your own gh login"
 
 # A Claude Code in the native install location that is not on PATH: say so,
 # and do not suggest installing a second copy.
 mkdir -p "$TMP/home/.local/bin"
 printf '#!/bin/sh\necho 0.0.0\n' >"$TMP/home/.local/bin/claude"
 chmod +x "$TMP/home/.local/bin/claude"
-# The same run covers the gh App token wrapper (one doctor run is slow): the
-# wrapper is installed and reached through PATH, there is no real gh and no
-# gh-token, and the apps config has one good line and one broken one.
-cp "$REPO/dot_local/bin/executable_gh" "$TMP/home/.local/bin/gh"
-chmod +x "$TMP/home/.local/bin/gh"
-ln -s "$TMP/home/.local/bin/gh" "$TMP/bin/gh"
-mkdir -p "$TMP/home/.config/gh-app-token"
-printf '# accounts\nexample-org\top://Example Vault/example-org GitHub App\nexample-user\tnot-a-reference\n' \
-  >"$TMP/home/.config/gh-app-token/apps"
 OUT="$(run_doctor)"
 want   "claude off PATH: reported as installed but not on PATH" "'claude' is installed at .*/.local/bin/claude but its folder is not on your PATH"
 refuse "claude off PATH: no second-install suggestion" 'Run: brew install --cask claude-code@latest'
 refuse "claude off PATH: Claude Code is not listed as missing from the Brewfile" 'core Brewfile is missing:.*claude-code'
-want   "the gh wrapper alone does not count as gh installed" "\[FAIL\] 'gh' is not installed"
-want   "  ...and the fix installs the real gh" "Fix:.*Run: brew install gh$"
-want   "gh App tokens: the wrapper is first on PATH" "\[PASS\] 'gh' resolves to the wrapper"
-want   "gh App tokens: missing gh-token is fixed with mise install" "Fix:.*Run: mise install \(installs gh-token"
-want   "gh App tokens: a broken config line is named" "lines that are not '<owner><TAB>op://Vault/Item' \(line 3\)"
-refuse "gh App tokens: the doctor never prints a 1Password reference" "op://Example Vault"
 
 if [ "$FAILS" -eq 0 ]; then echo "doctor-fix-lines: OK"; exit 0; fi
 echo "doctor-fix-lines: $FAILS failure(s)"

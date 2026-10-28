@@ -587,29 +587,8 @@ cli_fix() {
   esac
 }
 
-# real_gh: the first gh on PATH that is not the wrapper in ~/.local/bin. The
-# wrapper only hands calls over to the real gh, so on its own it must not count
-# as gh being installed.
-GH_WRAPPER="${HOME_DIR}/.local/bin/gh"
-real_gh() {
-  local p
-  while IFS= read -r p; do
-    [ -n "$p" ] || continue
-    [ "$p" -ef "$GH_WRAPPER" ] && continue
-    printf '%s\n' "$p"
-    return 0
-  done < <(type -ap gh 2>/dev/null)
-  return 1
-}
-
 for cli in bat fzf gh jq rg mise op claude; do
-  if [ "$cli" = "gh" ]; then
-    if real_gh >/dev/null; then
-      pass "'gh' is installed."
-    else
-      fail "'gh' is not installed." "Run: $(cli_fix gh)"
-    fi
-  elif command -v "$cli" >/dev/null 2>&1; then
+  if command -v "$cli" >/dev/null 2>&1; then
     pass "'${cli}' is installed."
   elif [ "$cli" = "claude" ] && claude_native="$(claude_native_install)"; then
     fail "'claude' is installed at ${claude_native} but its folder is not on your PATH." \
@@ -631,75 +610,6 @@ for cli in node npm; do
     fail "'${cli}' is not installed." "Run: mise install (installs Node.js and npm from ~/.config/mise/config.toml). If mise itself is missing, run brew install mise first, then open a new terminal window."
   fi
 done
-
-# =============================================================================
-section "GitHub App tokens for coding agents (optional)"
-# =============================================================================
-# The gh wrapper in ~/.local/bin gives coding agents a GitHub App token instead
-# of your own gh login, once ~/.config/gh-app-token/apps exists (SETUP.md,
-# Step 14). Without that file it hands every call to the real gh, so there is
-# nothing to check. These checks never mint a token, never read 1Password and
-# never print a secret: they only confirm the pieces are in place.
-GH_APPS_CONFIG="${XDG_CONFIG_HOME:-${HOME_DIR}/.config}/gh-app-token/apps"
-if [ ! -f "$GH_APPS_CONFIG" ]; then
-  pass "Not set up, which is fine: coding agents use your own gh login (SETUP.md, Step 14, sets it up)."
-else
-  if [ ! -x "$GH_WRAPPER" ]; then
-    fail "The gh wrapper is missing from ~/.local/bin/gh, so agents still use your own gh login." \
-      "Run: chezmoi apply"
-  else
-    FIRST_GH="$(command -v gh 2>/dev/null || true)"
-    if [ -n "$FIRST_GH" ] && [ "$FIRST_GH" -ef "$GH_WRAPPER" ]; then
-      pass "'gh' resolves to the wrapper in ~/.local/bin, ahead of the real gh."
-    else
-      fail "'gh' resolves to ${FIRST_GH:-nothing}, not the wrapper in ~/.local/bin, so agents still use your own gh login." \
-        "Put ~/.local/bin ahead of Homebrew on PATH (the managed ~/.zshrc does), then open a new terminal window."
-    fi
-  fi
-
-  if command -v gh-token >/dev/null 2>&1 ||
-    { command -v mise >/dev/null 2>&1 && (cd "$HOME_DIR" && mise which gh-token >/dev/null 2>&1); }; then
-    pass "gh-token is installed."
-  else
-    fail "gh-token is not installed, so the wrapper cannot mint tokens and agents' gh calls fail." \
-      "Run: mise install (installs gh-token from ~/.config/mise/config.toml), then open a new terminal window."
-  fi
-
-  # Each line: <owner><TAB><op:// reference>. The references are not printed.
-  GH_APPS_COUNT=0
-  GH_APPS_DEFAULT=""
-  GH_APPS_BAD=""
-  GH_APPS_LINE=0
-  while IFS= read -r gh_line || [ -n "$gh_line" ]; do
-    GH_APPS_LINE=$((GH_APPS_LINE + 1))
-    gh_line="${gh_line#"${gh_line%%[![:space:]]*}"}"
-    case "$gh_line" in "" | "#"*) continue ;; esac
-    gh_owner="${gh_line%%[[:space:]]*}"
-    gh_ref="${gh_line#"$gh_owner"}"
-    gh_ref="${gh_ref#"${gh_ref%%[![:space:]]*}"}"
-    case "$gh_owner" in
-      -* | *[!A-Za-z0-9-]*) GH_APPS_BAD="${GH_APPS_BAD} ${GH_APPS_LINE}" ;;
-      *)
-        case "$gh_ref" in
-          op://?*)
-            GH_APPS_COUNT=$((GH_APPS_COUNT + 1))
-            [ -n "$GH_APPS_DEFAULT" ] || GH_APPS_DEFAULT="$gh_owner"
-            ;;
-          *) GH_APPS_BAD="${GH_APPS_BAD} ${GH_APPS_LINE}" ;;
-        esac
-        ;;
-    esac
-  done <"$GH_APPS_CONFIG"
-  if [ -n "$GH_APPS_BAD" ]; then
-    fail "${GH_APPS_CONFIG} has lines that are not '<owner><TAB>op://Vault/Item' (line${GH_APPS_BAD})." \
-      "Fix those lines; see ~/.config/gh-app-token/apps.example for the format."
-  elif [ "$GH_APPS_COUNT" -eq 0 ]; then
-    fail "${GH_APPS_CONFIG} has no account lines, so agents' gh calls fail." \
-      "Add a line '<owner><TAB>op://Vault/Item' (see ~/.config/gh-app-token/apps.example), or delete the file to turn this off."
-  else
-    pass "${GH_APPS_COUNT} account(s) set up for agents; the default is ${GH_APPS_DEFAULT}."
-  fi
-fi
 
 # =============================================================================
 section "Summary"
