@@ -458,7 +458,7 @@ last_error() {
   local line
   # shellcheck disable=SC2016 # sed's $ (last line), not a shell expansion
   line="$(sed -e '/-----BEGIN/,/-----END/d' "$1" 2>/dev/null | sed -n '/[^[:space:]]/h; ${x;p;}')"
-  printf '%s' "$line" | sed -E 's/gh[opsur]_[A-Za-z0-9_]+/[redacted]/g; s/github_pat_[A-Za-z0-9_]+/[redacted]/g'
+  printf '%s' "$line" | sed -E 's/gh[opsur]_[A-Za-z0-9_.-]+/[redacted]/g; s/github_pat_[A-Za-z0-9_.-]+/[redacted]/g'
 }
 
 mint() {
@@ -488,7 +488,7 @@ mint() {
   token="$(printf '%s\n' "$json" | sed -n 's/^[[:space:]]*"token":[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n 1p)"
   exp_iso="$(printf '%s\n' "$json" | sed -n 's/^[[:space:]]*"expires_at":[[:space:]]*"\([^"]*\)".*/\1/p' | sed -n 1p)"
   case "$token" in
-    "" | *[!A-Za-z0-9_]*)
+    "" | *[!A-Za-z0-9_.-]*)
       token=""
       fail "gh-token answered with something that is not a token" "run: mise install (to get a working gh-token)"
       ;;

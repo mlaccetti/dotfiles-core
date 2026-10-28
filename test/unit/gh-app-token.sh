@@ -61,6 +61,9 @@ case "${2##*/}" in
 esac
 EOF
 
+# The token mimics GitHub's current installation tokens: compact "token":"..."
+# and a long body with "." and "-" (a 383-character token broke the first
+# version, which only accepted [A-Za-z0-9_]).
 # Stub gh-token: checks it was handed the key of the right App, optionally
 # blocks on a gate FIFO, and prints gh-token's JSON with a token named after
 # the App and the mint number.
@@ -91,7 +94,7 @@ if [ -n "${STUB_MINT_FAIL:-}" ]; then
   echo "failed generating installation token: unexpected status code: 401" >&2
   exit 1
 fi
-printf '{\n  "token": "ghs_%s_%s",\n  "expires_at": "%s",\n  "permissions": {\n    "metadata": "read"\n  }\n}\n' \
+printf '{\n  "token":"ghs_%s_%s.eyJhbGciOiJSUzI1NiJ9-real-format.c2lnbmF0dXJl-x",\n  "expires_at": "%s",\n  "permissions": {\n    "metadata": "read"\n  }\n}\n' \
   "$(printf '%s' "$item" | tr -c 'A-Za-z0-9' _)" "$n" "$STUB_EXPIRES_AT"
 EOF
 
@@ -112,6 +115,8 @@ printf '# test accounts\n\nacme\top://Test Vault/acme app\nOcto-Org\top://Test V
 
 ACME="ghs_acme_app_"
 OCTO="ghs_octo_app_"
+# The body the stub gh-token appends after the per-mint counter.
+TOKSUFFIX=".eyJhbGciOiJSUzI1NiJ9-real-format.c2lnbmF0dXJl-x"
 
 mints() { if [ -f "$STUB_LOG/mint.log" ]; then wc -l <"$STUB_LOG/mint.log" | tr -d ' '; else echo 0; fi; }
 reset_cache() { rm -rf "$CACHE" "$STUB_LOG/mint.log" "$STUB_LOG/op.log"; }
@@ -300,7 +305,7 @@ printf 'go\ngo\ngo\ngo\ngo\n' >&8
 wait
 exec 7>&- 8>&-
 [ "$(mints)" = 1 ] && ok "concurrent: five calls, one mint" || no "concurrent: minted $(mints) times"
-[ "$(cut -f1 "$STUB_LOG/gh.log" | sort -u)" = "${ACME}1" ] && [ "$(wc -l <"$STUB_LOG/gh.log" | tr -d ' ')" = 5 ] &&
+[ "$(cut -f1 "$STUB_LOG/gh.log" | sort -u)" = "${ACME}1${TOKSUFFIX}" ] && [ "$(wc -l <"$STUB_LOG/gh.log" | tr -d ' ')" = 5 ] &&
   ok "concurrent: all five got that token" || no "concurrent: gh got $(cut -f1 "$STUB_LOG/gh.log" | sort | uniq -c | tr '\n' ' ')"
 cat "$TMP/conc-out" >>"$ALL"
 
