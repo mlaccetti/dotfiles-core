@@ -26,6 +26,7 @@ hasn't happened, or invent an Atlassian or Linear account detail.**
 | 11. Linear MCP | `claude mcp add --transport http linear-server --scope user https://mcp.linear.app/mcp` | `claude mcp list` shows `linear-server` connected | **Requires human** to complete the browser OAuth login: run `claude`, type `/mcp`, choose `linear-server`, follow the browser sign-in. |
 | 12. Atlassian MCP | `claude mcp add --transport http atlassian --scope user https://mcp.atlassian.com/v2/mcp` | `claude mcp list` shows `atlassian` connected | **Requires human** for the browser OAuth login (`/mcp` inside `claude`, as in step 11), and requires Rovo/MCP to already be enabled for the human's Atlassian site (do not assume this; ask). |
 | 13. GitHub | `gh auth login` | `gh auth status` | **Requires human** for the browser OAuth login. |
+| 14. GitHub App for agents (optional) | Nothing for the agent to run: the human creates the App, stores it in 1Password and writes `~/.config/gh-app-token/apps` (see below). | `test -f "$HOME/.config/gh-app-token/apps"`, then doctor.sh's "GitHub App tokens for coding agents" section shows only `[PASS]` | **Requires human.** Skip it unless the human asks. Creating and installing the App happens in the browser, the private key goes straight into the human's 1Password, and an organization may need one of its owners. Never download, read, print or `op read` the key, and never print a token. |
 
 Always pass `--scope user` to `claude mcp add`. The default scope is
 `local`, which makes the server available only in the directory where the
@@ -50,6 +51,25 @@ If Claude Code's managed settings force a single login method
 (`forceLoginMethod` or `forceLoginOrgUUID`), one of the two modes is
 blocked. Ask the human whether such a setting is in place rather than
 assuming.
+
+### `gh` inside an agent session
+
+`~/.local/bin/gh` is a wrapper, ahead of Homebrew's `gh` on PATH. Once
+the human has done step 14, every `gh` an agent runs gets a GitHub App
+installation token for the account that owns the target repository, not
+the human's login. It recognizes an agent session by `CLAUDECODE`
+(Claude Code), `CODEX_THREAD_ID` or `CODEX_SANDBOX` (Codex CLI),
+`CURSOR_AGENT` (Cursor's agent), `ANTIGRAVITY_AGENT` (agy) or
+`GEMINI_CLI` (Gemini CLI), or by `GH_APP_TOKEN_ENABLE=1`. Without
+`~/.config/gh-app-token/apps` it changes nothing.
+
+If a `gh` call fails with `gh-app-token: no GitHub App token for ...`,
+stop and report that line to the human. Do not work around it: do not
+set `GH_APP_TOKEN_DISABLE`, `GH_TOKEN` or `GITHUB_TOKEN`, call the real
+`gh` by its full path, or run `gh auth token`. The wrapper fails closed
+on purpose, so agents never spend the human's own rate limit.
+`GH_APP_TOKEN_DEBUG=1` explains each decision on stderr and never prints
+a token, so it is safe to use.
 
 ### Doctor script caveat
 
@@ -138,5 +158,8 @@ back to asking the human to run `chezmoi init` themselves interactively.
   and following the browser login.
 - **Step 12**, additionally: confirm Rovo/MCP is enabled for the human's
   Atlassian site before attempting the connection; don't assume it.
+- **Step 14**, entirely, and only if the human wants it: the GitHub App,
+  its private key and the 1Password item are the human's to create. The
+  agent may run doctor.sh afterward to check the result.
 - Any Homebrew package in Step 4 that fails because the Mac restricts
   installs: report which package and why, don't retry it yourself.
