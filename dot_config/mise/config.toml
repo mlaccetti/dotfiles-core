@@ -7,9 +7,17 @@
 # needed to build small web apps with Claude. "lts" tracks the newest LTS line, so
 # a re-install picks up a new major version when Node promotes one.
 #
+# gh-token (https://github.com/Link-/gh-token): mints GitHub App installation
+# tokens. The `gh` wrapper in ~/.local/bin uses it so coding agents get their
+# own token instead of your gh login (see SETUP.md). Its releases are bare
+# binaries named after the platform (darwin-arm64 and so on), so `bin` names
+# the installed file. It is pinned rather than "latest" because it handles App
+# private keys: move the version up on purpose, after reading the release.
+#
 # pnpm is deliberately not listed: npm covers everything above, and a
 # second package manager is one more thing to explain and keep working.
 # Add `pnpm = "latest"` here if a project ever needs it; the install
 # script re-runs on its own when this file changes.
 [tools]
 node = "lts"
+"github:Link-/gh-token" = { version = "2.0.10", bin = "gh-token" }

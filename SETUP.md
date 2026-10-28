@@ -549,6 +549,151 @@ your-username."
 (SSO), you may need to authorize the login for it afterward, on GitHub's
 own website.
 
+### Step 14 (optional): Give coding agents their own GitHub App
+
+Skip this step unless coding agents (Claude Code, Codex, Cursor's agent,
+agy and similar) run a lot of `gh` commands for you. Every one of those
+uses your own GitHub login from Step 13, which allows 5,000 requests an
+hour shared with everything else you do. A busy agent can use all of it,
+and then `gh` stops working for you too.
+
+This step gives agents a GitHub App of their own instead. Each App
+installation has its own limit, separate from yours. Outside an agent
+session, `gh` keeps using your login exactly as before.
+
+How it works: chezmoi installs a small `gh` wrapper in `~/.local/bin`,
+ahead of Homebrew's `gh`. When it runs inside an agent session, it gets
+a short-lived token (one hour) from the App of the account that owns the
+repository, using `gh-token` and a private key it reads from 1Password,
+and runs the real `gh` with that token. Until you finish this step, the
+wrapper does nothing at all.
+
+Two things change for agents once this is on:
+
+- Pull requests, issues and comments an agent creates through `gh` show
+  up as made by the App (for example `your-app[bot]`), not by you.
+  `git push` over SSH still uses your own SSH key.
+- Agents can only do what you allow the App to do (the permissions
+  below), and only on the repositories you install it on.
+
+You need 1Password and its `op` command signed in, from Step 4's
+1Password question. Repeat parts 1 to 3 for each GitHub account (your
+own user, and each organization) whose repositories agents work on. For
+an organization, installing the App takes one of its owners; ask one if
+that isn't you.
+
+**1. Create the App.** On GitHub, open **Settings > Developer settings >
+GitHub Apps > New GitHub App**. For an organization, open the
+organization's **Settings > Developer settings > GitHub Apps** instead.
+
+- **GitHub App name:** anything unique, such as `yourname-agents`.
+- **Homepage URL:** any address, such as your GitHub profile.
+- **Webhook:** uncheck **Active**. The App never receives events.
+- **Repository permissions:** set these, and leave the rest at
+  **No access**:
+  - **Contents:** Read and write
+  - **Pull requests:** Read and write
+  - **Issues:** Read and write
+  - **Actions:** Read-only
+  - **Checks:** Read-only
+  - **Commit statuses:** Read-only
+  - **Metadata:** Read-only (GitHub sets this one for you)
+
+  Give less if you want agents to do less. These cover reading code,
+  opening and merging pull requests, working with issues, and watching
+  CI.
+- **Where can this GitHub App be installed?** Choose **Only on this
+  account**.
+
+Click **Create GitHub App**. On the page that follows, note the **App
+ID**. Then scroll to **Private keys**, click **Generate a private key**,
+and your browser downloads a `.pem` file.
+
+**2. Install it.** On the App's page, click **Install App** in the left
+sidebar, then **Install** next to the account. Choose **All
+repositories**, or **Only select repositories** and pick them. After
+you click **Install**, the address in your browser ends in
+`/installations/` and a number. That number is the **installation ID**.
+
+**3. Put it in 1Password.** Store the App ID, the installation ID and
+the key in one item, with fields named exactly `app_id`,
+`installation_id` and `private_key`. Replace the vault, title, IDs and
+file path with your own:
+
+```bash
+op item create --category "API Credential" --vault "Your Vault" \
+  --title "your-org GitHub App" \
+  'app_id[text]=123456' 'installation_id[text]=7890123' \
+  'private_key[file]=/path/to/downloaded-key.pem'
+```
+
+Check that 1Password can hand the key back:
+
+```bash
+op read "op://Your Vault/your-org GitHub App/private_key" | head -n 1
+```
+
+**You should see:** `-----BEGIN RSA PRIVATE KEY-----`. Then delete the
+downloaded `.pem` file: 1Password keeps the only copy, and the wrapper
+never writes the key to disk.
+
+**4. Tell the wrapper about each account.** Create
+`~/.config/gh-app-token/apps` with one line per account: the GitHub
+account name, a Tab, then the 1Password item as `op://vault/item`. Start
+from the example chezmoi installed next to it:
+
+```bash
+cp ~/.config/gh-app-token/apps.example ~/.config/gh-app-token/apps
+```
+
+Then edit `apps` so its lines read like this (a Tab between the two
+parts, not spaces):
+
+```text
+your-org	op://Your Vault/your-org GitHub App
+your-username	op://Your Vault/your-username GitHub App
+```
+
+The first line is the default. Its App is used for repositories of any
+account not in the file, and for commands that name no repository at
+all. An installation token can still read public repositories anywhere.
+The file holds only 1Password references, no secrets.
+
+**5. Check it.** Run this from your home folder. It makes one call as if
+you were an agent, and explains each choice it makes:
+
+```bash
+cd ~ && GH_APP_TOKEN_ENABLE=1 GH_APP_TOKEN_DEBUG=1 gh api rate_limit --jq .resources.core
+```
+
+**You should see:** 1Password may ask you to approve access first. Then
+a few lines starting `gh-app-token:`, one of them naming your default
+account, and last a `limit` and a `remaining` count. Those are the App's
+numbers, not your own login's. Run
+`bash "$(chezmoi source-path)/bin/doctor.sh"` too: its "GitHub App tokens
+for coding agents" section should be all `[PASS]`.
+
+The wrapper picks the account from the command itself: `-R owner/repo`,
+a `gh api repos/owner/...` path, a github.com link in the command, or
+`GH_REPO`, and otherwise the `origin` remote of the folder the agent is
+working in. It keeps each token in `~/.cache/gh-app-token/` (readable
+only by you) and gets a new one when less than 10 minutes are left.
+
+**If this fails:**
+- An agent's `gh` says `gh-app-token: no GitHub App token for ...`: the
+  rest of that line names the account and the fix. The wrapper never
+  falls back to your own login in an agent session, so `gh` fails until
+  that is fixed. The usual causes are 1Password being locked (run
+  `op signin`), a field name that doesn't match exactly, or the App not
+  being installed on that account.
+- "gh-token is not installed": run `mise install`, then open a new
+  terminal window.
+- To use your own login for one command in an agent session, run it
+  yourself with `GH_APP_TOKEN_DISABLE=1` in front. To turn the whole
+  thing off, delete `~/.config/gh-app-token/apps`.
+- An agent tool the wrapper doesn't recognize keeps using your login.
+  Start that tool with `GH_APP_TOKEN_ENABLE=1` set to opt it in.
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -566,6 +711,7 @@ own website.
 | A "model not found" (or similar) error in `claude-gw` | The gateway uses its own model names | Ask whoever runs the gateway for its Opus, Sonnet, and Haiku model names, then run `claude-gw-setup` again and answer `y` to the model names question. |
 | Your Claude login seems gone after using the gateway (plain `claude` asks you to log in again) | You probably typed `/logout` inside `claude-gw`, which signs you out of your Claude account | Run `claude` and sign in again with your Claude account (Step 9). Then use `claude-gw` without `/logout`. |
 | `node` or `npm` says "command not found" | Node.js didn't finish installing in Step 4 (often a network problem) | Run `mise install`, then open a new terminal window and try again. |
+| An agent's `gh` fails with `gh-app-token: no GitHub App token for ...` | You set up Step 14, and the wrapper could not get a token for that account (1Password locked, a field name off, or the App not installed there) | Follow the "Fix:" at the end of that line. See Step 14's "If this fails". |
 | Linear or Atlassian works in one folder but is missing in another | It was added without `--scope user`, so it was saved only for that one folder | Run the connect command again from Step 11 or 12, with `--scope user` as written there. |
 | Not sure what belongs in `~/.zshrc.local` | It's easy to confuse with the managed `~/.zshrc` | See "Making it yours" below. |
 
